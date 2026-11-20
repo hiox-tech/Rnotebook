@@ -1,0 +1,142 @@
+{
+  "id": "rnotebook-native-only-pruning-v1",
+  "date": "2026-11-06",
+  "scope": "Remove unused Edmund app services; retain native Code/Visual, SwiftMath, bundled Mermaid and editor clipboard",
+  "removed": {
+    "Diagnostics/CrashReporter.swift": {
+      "beforeSHA256": "bf985ae279b6e79ed749cccdbb1c69529ffda98d2ba469f606901ed22fe556e6",
+      "bytes": 6227
+    },
+    "Diagrams/MermaidRelease.swift": {
+      "beforeSHA256": "7ac78c32fc7a41e91a7486944e627a9ef41b38a6416d7b343a68324ebe2089f6",
+      "bytes": 3014
+    },
+    "Export/DocumentExporter.swift": {
+      "beforeSHA256": "2f7759da1254d8376d9a2ef9595d729737586df1ed2c61d208b1705e4e787c2d",
+      "bytes": 8449
+    },
+    "Export/DocumentHTML.swift": {
+      "beforeSHA256": "88c7fcf1bec4ba4d763a9a2e2818f7823958df5a7d7d75a8beef5edcbbe8c6c4",
+      "bytes": 20196
+    },
+    "Export/HTMLRenderer+Inline.swift": {
+      "beforeSHA256": "27e6966d904a76141742bcc2415735bfe1fdaf40dd887339a10b46c2c0b7d508",
+      "bytes": 8450
+    },
+    "Export/HTMLRenderer.swift": {
+      "beforeSHA256": "6597449b7f8c55e150ffbff7aefe4a171c6cc795ed4c58caf109234ef362558f",
+      "bytes": 53833
+    },
+    "Export/HTMLTheme.swift": {
+      "beforeSHA256": "2eb55cfcd820615fb45170241683d3325c2783aebc80e5c413c8eeeafc9c33ca",
+      "bytes": 33942
+    },
+    "Export/LocalImageInlining.swift": {
+      "beforeSHA256": "2d8697def4e145374f714c8ad807495a2f0af5dd550cadceff5ebd44890604e7",
+      "bytes": 3047
+    },
+    "Export/MarkdownPrinter.swift": {
+      "beforeSHA256": "d250ba120b1f5fbf43e1a985cb75af2abed5da6c0dbb6edc04171125de286479",
+      "bytes": 7591
+    },
+    "Export/PlainTextExport.swift": {
+      "beforeSHA256": "19b1390f4cbdaf85f95d6e61b74d5e7588629bc34ae95701a478b2384ab13f4a",
+      "bytes": 11718
+    },
+    "Export/QuickLookPage.swift": {
+      "beforeSHA256": "3c7a980db5413ddedffeddc95fbcccbdc3ec07dacec37612f3258a8024575140",
+      "bytes": 5900
+    },
+    "Export/ReadHTMLRenderer.swift": {
+      "beforeSHA256": "1e386c2476c6e5d72d83ec7d2714104a5edcbebf5a3d90e61395d88c8fa97504",
+      "bytes": 2229
+    },
+    "Export/ReadModeWebView.swift": {
+      "beforeSHA256": "e7ec1dd1dcd42336ac9f0a0bef2a4fe1241f33d470c2d992b2d72693dde7d195",
+      "bytes": 27164
+    },
+    "Export/ReadRenderOptions.swift": {
+      "beforeSHA256": "f0dfe23512474a91df4af68d194eee97d90bda4a41351adb77c545102c54b7cb",
+      "bytes": 2558
+    },
+    "Export/RichTextExport.swift": {
+      "beforeSHA256": "d904429730c14f955c1d6358d981c418b64f6b7f9867bf5f785c28ed3b2e4477",
+      "bytes": 6682
+    },
+    "Export/SelfContainedMarkdown.swift": {
+      "beforeSHA256": "7ba93579cfc3c849ef3816da3fc8a521d3d43952f3c39fa8bc7eb9de3d2ced0b",
+      "bytes": 10050
+    },
+    "Extensions/EdmundExtension.swift": {
+      "beforeSHA256": "8506fee46a18ce15a9a1abc6f6761ba432885029eb52aad23d9e3453ed27d49e",
+      "bytes": 9941
+    },
+    "Extensions/ExtensionPayloadInstaller.swift": {
+      "beforeSHA256": "994eebcac7354616ab515a77aa3df75699cdc67a0076101fdb644d0c2dd028ef",
+      "bytes": 7438
+    },
+    "Extensions/GitHubReleaseInfo.swift": {
+      "beforeSHA256": "a8daaba221e6dd982444f259e2b6d92d1389935addd2ef1f6593f86e706d84c0",
+      "bytes": 2333
+    },
+    "Extensions/MermaidExtension.swift": {
+      "beforeSHA256": "87b289921805399edd60a6132494790f3b59546627810dc2e734b3e67ea311db",
+      "bytes": 4079
+    },
+    "Math/RaTeX/DisplayListRenderer.swift": {
+      "beforeSHA256": "aa5f8447b92becc1ab9081e29abfe78002ebeb6fb1c4f30ebbbe916478cf7a45",
+      "bytes": 16260
+    },
+    "Math/RaTeX/RaTeXRelease.swift": {
+      "beforeSHA256": "0714aedd78cbb35c78bf26b94dae47336a6fec2464a272ebfac64f6af118af5e",
+      "bytes": 2982
+    },
+    "Math/RaTeX/RaTeXRenderer.swift": {
+      "beforeSHA256": "d26bf0bfffe8e65909cd9f46d7d18a7589a462898a4b9f45e234ed58a532ef2b",
+      "bytes": 2010
+    },
+    "Math/RaTeX/WasmMathHost.swift": {
+      "beforeSHA256": "71675319713a7b71ff9770fdc98ae4d45469902499f3bb0b5863941424ac45bf",
+      "bytes": 7275
+    },
+    "Model/StatusBarPrefs.swift": {
+      "beforeSHA256": "b96937491f6d61611f0dd0d7185846affdaa85b1df77bc6f572fbcb1b0bfdc6f",
+      "bytes": 3506
+    },
+    "Model/VersionHistory.swift": {
+      "beforeSHA256": "78cb9730f07f30e47d3de75ffbb4f2b04ea497f42df3499bdf72e8824ea550b6",
+      "bytes": 6680
+    }
+  },
+  "modified": {
+    "TextView/EditorTextView.swift": {
+      "beforeSHA256": "d21058d41aec0392530c0d10569b060918213171ea8980e2f9118cd08ec8f992",
+      "prunedSHA256": "980b18318a352502ef5ebd4e0e788a9bf53ea8dfc52f91a59b942b7f7ff6e602"
+    },
+    "Diagrams/MermaidRenderer.swift": {
+      "beforeSHA256": "ea47ffe01d3038015df2485b477191f6b8ab902faf88c9769e9b7eb68a07c624",
+      "prunedSHA256": "83228234bdff0372773519e2d0e6bd0c087219321a005935ce196b13f376bf31"
+    },
+    "Math/MathRenderer.swift": {
+      "beforeSHA256": "e0033e04209d2026446ecd011430b8f7493ad0eb02cb2464be3bcada3919836b",
+      "prunedSHA256": "43e2eef5d6a7ef996d5f05d9148faabee6d5825057ccd422bc73619531b7705f"
+    },
+    "Editing/EditorTextView+FormattingCommands.swift": {
+      "beforeSHA256": "6ae43b74bb41b7f9e7b8f68ef919d178d64f400dece00903c581873aea0cfc59",
+      "prunedSHA256": "5de40ce9451dd14cde22814c2be71079925bff1442bc380f063dab445c745155"
+    },
+    "Rendering/EditorTextView+WikiLinks.swift": {
+      "beforeSHA256": "4e209aafdbe6f2b209e4432acd402b644889d16a61e3df6156fd3462a1c36287",
+      "prunedSHA256": "a78e68b15cba90560263046a506caeb7f0909d1174ef81798533ca30f655a0e9"
+    },
+    "Rendering/EditorTextView+Rendering.swift": {
+      "beforeSHA256": "bbfecffd034a7eb9e9b550b6e401aef34e0fff738f019ec0351dc4513df7799e",
+      "prunedSHA256": "4d535466822568ea4f7fdb2704ee4fa16da2e7f06ea1ace7fc4ed34046dac4b6"
+    }
+  },
+  "patch": "patches/Rnotebook-Pruning.patch",
+  "recoveryArchive": ".local/maintenance/edmund-prune-2026-11-06/EdmundCore-before.tar.gz",
+  "recoveryArchiveSHA256": "06c46a5aff0f13158376d7f18e75cbb7d74b7e5c12a74f9f6d5d4406a893029c",
+  "upstreamBaseline": "SOURCE-HASHES.json",
+  "priorLocalPatches": "LOCAL-PATCHES.json"
+}

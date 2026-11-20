@@ -1,0 +1,23 @@
+---
+title: "RMD 块头兼容验证"
+output: html_document
+---
+
+# 命名参数头、静态跳过和同会话
+
+```{r rmd-setup, echo=TRUE, error=FALSE}
+rmd_value <- 41L
+cat("RMD_SETUP_OK\n")
+```
+
+```{r rmd-skipped, eval=FALSE}
+stop("RMD_SKIPPED_BLOCK_MUST_NOT_RUN")
+```
+
+```{r rmd-check, eval=TRUE, error=FALSE}
+rmd_value <- rmd_value + 1L
+stopifnot(rmd_value == 42L)
+cat("RMD_COMPATIBILITY_OK\n")
+```
+
+可直接保存并重开 .Rmd，不能暗中改名为 .qmd；Finder 预览也不得执行这些块。

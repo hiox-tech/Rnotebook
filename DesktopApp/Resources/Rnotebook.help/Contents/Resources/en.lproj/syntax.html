@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook Help"><meta name="description" content="Quarto Syntax"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>Quarto Syntax</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">User Guide</a></nav><main><a name="rnotebook-syntax" id="rnotebook-syntax"></a><h1 id="title">Quarto Syntax</h1>
+<p>This reference describes the current Rnotebook editor and export workflow. Code preserves and edits the full source. Visual formats common Markdown and the extensions below. Quarto output also depends on the format, engine and YAML, and may differ from Visual.</p>
+<h2 id="section-0">Headings, paragraphs and inline styles</h2>
+<div class="table-scroll"><table><thead><tr><th>Purpose</th><th>Syntax</th></tr></thead><tbody><tr><td>Headings 1–6</td><td><code># Heading</code> through <code>###### Heading</code></td></tr><tr><td>Paragraphs</td><td>Separate paragraphs with a blank line</td></tr><tr><td>Hard line break</td><td>Two trailing spaces or a trailing backslash</td></tr><tr><td>Bold, italic, both</td><td><code>**bold**</code>, <code>*italic*</code>, <code>***both***</code></td></tr><tr><td>Strikethrough</td><td><code>~~deleted~~</code></td></tr><tr><td>Highlight</td><td><code>==important==</code></td></tr><tr><td>Inline code</td><td><code> `mean(x)` </code></td></tr><tr><td>Underline</td><td><code>&lt;u&gt;text&lt;/u&gt;</code></td></tr><tr><td>Superscript, subscript</td><td><code>&lt;sup&gt;2&lt;/sup&gt;</code>, <code>&lt;sub&gt;i&lt;/sub&gt;</code></td></tr><tr><td>Keyboard label</td><td><code>&lt;kbd&gt;⌘S&lt;/kbd&gt;</code></td></tr><tr><td>Escaped marker</td><td><code>\*</code> displays a literal asterisk</td></tr></tbody></table></div>
+<h2 id="section-1">Lists, tasks, quotes and rules</h2>
+<pre><code>- Item
+  - Nested item
+
+1. First step
+2. Second step
+
+- [ ] To do
+- [x] Done
+
+&gt; Quoted text
+
+---
+</code></pre>
+<p>Both rules and YAML may use <code>---</code>. A pair at the document start marks YAML; elsewhere Markdown context determines whether it is a rule.</p>
+<h2 id="section-2">Links, images and dimensions</h2>
+<pre><code>[Quarto](https://quarto.org/)
+[Another notebook](notes.qmd)
+[A heading](#section)
+![Description](images/plot.png)
+![Description|320](images/plot.png)
+![Description|320x200](images/plot.png)
+[[notes]]
+[[notes#section|Display text]]
+![[plot.png|320x200]]
+</code></pre>
+<p>Import or link images from Insert. File paths are relative to the notebook location. Wiki links do not create a notebook index, add extensions or copy target files. Wiki embeds support images; they do not transclude another document’s contents.</p>
+<h2 id="section-3">Tables and footnotes</h2>
+<pre><code>| Measure | Value |
+| :--- | ---: |
+| Mean | 18 |
+| Sample size | 3 |
+
+A note[^note].
+
+[^note]: Footnote text.
+</code></pre>
+<p>Ordinary tables are Markdown text. Results produced by R, such as kable/flextable, are runtime previews; saving text does not restore historical output.</p>
+<h2 id="section-4">Display code and executable R chunks</h2>
+<p>Ordinary fences display code. Rnotebook’s interactive execution commands target complete R chunks. The fence label distinguishes their purpose.</p>
+<pre><code>```text
+Display-only text.
+```
+
+```r
+x &lt;- 1  # Display-only R code
+```
+
+```{r}
+x &lt;- c(12, 18, 24)
+mean(x)
+```
+</code></pre>
+<p>Quarto chunk options use <code>#|</code> lines. The <code>echo</code> and <code>warning</code> options below are <strong>Quarto rendering options</strong>, not permissions or isolation controls for the interactive session.</p>
+<pre><code>```{r}
+#| label: example
+#| echo: true
+#| warning: false
+summary(iris)
+```
+</code></pre>
+<p>Close every fence. Prose, other languages and incomplete fences are not automatically run simply because they are present in a document.</p>
+<p>Common parameterized RMD headers such as <code>{r setup, include=FALSE}</code> are supported. Batches respect static eval false; explicit chunk/selection execution can override it. Error true permits continuation after ordinary errors. See <a href="r-export.html">Running R and Rendering</a> for the full rules.</p>
+<h2 id="section-5">YAML document metadata</h2>
+<pre><code>---
+title: &quot;Analysis report&quot;
+author: &quot;Author&quot;
+format:
+  html:
+    toc: true
+execute:
+  echo: true
+---
+</code></pre>
+<p>Place YAML at the document start. Export in YAML mode to use the document configuration, or choose Custom to use the corresponding panel options. Custom drafts are not written back to the notebook. Consult Quarto for all options supported by each format.</p>
+<h2 id="section-6">Inline and display math</h2>
+<pre><code>The mean is $\bar{x}$.
+
+$$
+E = mc^2
+$$
+</code></pre>
+<p>Use LaTeX math expressions. Fonts, layout and supported commands may differ between the editor and HTML/Word/PDF; inspect the final output for complex formulas.</p>
+<h2 id="section-7">Mermaid diagrams</h2>
+<pre><code>```mermaid
+flowchart LR
+    A[Prepare data] --&gt; B[Run analysis]
+    B --&gt; C[Render report]
+```
+</code></pre>
+<p>Built-in templates cover flowchart, sequence, class, state, entity-relationship and XY diagrams. Choose them from Insert → Mermaid Diagrams. Mermaid fences describe diagrams and do not run R. Quarto handles Mermaid in exports; the diagram syntax and output format need to be compatible.</p>
+<h2 id="section-8">Callouts and collapsible callouts</h2>
+<pre><code>&gt; [!NOTE] Note
+&gt; The callout body.
+
+&gt; [!TIP]- Expand this
+&gt; A collapsible body.
+
+&gt; [!WARNING]+ Initially expanded
+&gt; Check the parameters.
+</code></pre>
+<p>Basic types are note, tip, important, warning and caution. Extended types include info, todo, abstract, success, question, failure, danger, bug, example and quote, with aliases. Unknown types remain ordinary quotes. Static exports keep the collapsed body visible rather than reproducing an interactive collapse control.</p>
+<p>Native Quarto callouts can also be written in Code and rendered by Quarto. This does not imply identical Visual layouts for every Quarto Div.</p>
+<pre><code>::: {.callout-note}
+A native Quarto callout.
+:::
+</code></pre>
+<h2 id="section-9">Comments, tags and block anchors</h2>
+<pre><code>&lt;!-- HTML comment --&gt;
+%%inline comment%%
+
+%%
+A multi-block comment
+%%
+
+#research
+Paragraph text. ^block-id
+</code></pre>
+<p>Tags and block markers are recognized without creating a global tag search or resource index. Comments affect visibility or exported text; <strong>they do not prevent code already executed by R/knitr from running</strong>. Use Quarto execution options to control rendering execution.</p>
+<h2 id="section-10">Export compatibility and more QMD syntax</h2>
+<p>Edmund syntax compatibility is enabled by default for exports. It converts highlighting, comments, callouts/collapse, wiki links/images, dimensions, block anchors and some simple HTML marks. Turn it off in the render panel if desired; user filters are retained. Colors, icons and keyboard styling can differ across formats.</p>
+<p>Write citations, cross-references, further Divs and format-specific QMD options in Code for Quarto to process. This guide does not promise full Visual semantic previews or automatic conversion of RMD into another engine’s special semantics.</p>
+<p>Continue to the <a href="https://quarto.org/docs/authoring/markdown-basics.html" target="_blank" rel="noopener">official QMD syntax guide</a>, <a href="https://quarto.org/docs/computations/r.html" target="_blank" rel="noopener">Using R with Quarto</a>, or the <a href="quick-start.html">Quick Start</a>.</p></main></body></html>

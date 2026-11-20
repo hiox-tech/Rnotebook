@@ -1,0 +1,51 @@
+# Notebook 示例
+
+顶部运行全部 R 代码块，⌘↩运行当前块。结果显示在 Visual 中；R 会话状态位于右侧，Rscript 路径在软件设置中选择。
+
+## 数据与普通输出
+
+```{r}
+#| label: data-example
+# 可修改下面的数值，再运行此块
+notebook_example_runs <- if (exists("notebook_example_runs")) notebook_example_runs + 1L else 1L
+dat <- data.frame(
+  group = rep(c("A", "B", "C"), 2),
+  sex = rep(c("男", "女"), each = 3),
+  value = c(22, 28, 18, 19, 25, 21)
+)
+dat
+```
+
+## kable 表格
+
+```{r}
+#| label: kable-example
+knitr::kable(dat, caption = "分组数据")
+```
+
+## flextable 表格
+
+```{r}
+#| label: flextable-example
+ft <- flextable::flextable(dat)
+ft <- flextable::theme_vanilla(ft)
+flextable::bold(ft, part = "header")
+```
+
+## ggplot 图形
+
+```{r}
+#| label: ggplot-example
+ggplot2::ggplot(dat, ggplot2::aes(x = group, y = value, fill = sex)) +
+  ggplot2::geom_col(position = "dodge") +
+  ggplot2::labs(title = "分组对比", x = "组别", y = "数值", fill = "性别") +
+  ggplot2::theme_minimal()
+```
+
+## 流程图
+
+```mermaid
+flowchart LR
+A[编辑代码] --> B[运行 R]
+B --> C[查看结果]
+```

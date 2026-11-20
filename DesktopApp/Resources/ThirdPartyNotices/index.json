@@ -1,0 +1,155 @@
+[
+  {
+    "id": "edmund",
+    "name": "Edmund",
+    "license": "Apache-2.0",
+    "purpose": "Native Markdown editor",
+    "file": "edmund.txt",
+    "source": "ThirdParty/EdmundCore/LICENSE",
+    "sha256": "b2cbe467739326f09b7d3c2b33cacc90eedabc8ba1a2915b3b409404beadfbb3"
+  },
+  {
+    "id": "swift-markdown",
+    "name": "swift-markdown",
+    "license": "Apache-2.0",
+    "purpose": "Markdown parsing",
+    "file": "swift-markdown.txt",
+    "source": "ThirdParty/Dependencies/swift-markdown/LICENSE.txt",
+    "sha256": "167beb36f181bd163c93c6feb45c68e5f9462fe1af55b278f7bfd1df20e673a3"
+  },
+  {
+    "id": "swift-markdown-notice",
+    "name": "swift-markdown — attribution",
+    "license": "Upstream NOTICE",
+    "purpose": "Copyright and attribution",
+    "file": "swift-markdown-notice.txt",
+    "source": "ThirdParty/Dependencies/swift-markdown/NOTICE.txt",
+    "sha256": "ee7da43afcac4a52196a2141024573ec2ceb84b14e74dfed38522d94586fbc52"
+  },
+  {
+    "id": "cmark",
+    "name": "cmark",
+    "license": "BSD and MIT notices",
+    "purpose": "CommonMark parser",
+    "file": "cmark.txt",
+    "source": "ThirdParty/Dependencies/cmark/COPYING",
+    "sha256": "c22e885f33b821bddb24cf007145e5540655b6c0f403e49e6c76a93c28e6d9a9"
+  },
+  {
+    "id": "swiftmath",
+    "name": "SwiftMath",
+    "license": "MIT",
+    "purpose": "Mathematical typesetting",
+    "file": "swiftmath.txt",
+    "source": "ThirdParty/Dependencies/SwiftMath/LICENSE",
+    "sha256": "75c39d3db0d038a4966dfb86e4703748ee56434e188959e4423cfc91a54a93af"
+  },
+  {
+    "id": "mathfonts",
+    "name": "Math font bundle / MathChat",
+    "license": "MIT",
+    "purpose": "Bundled math font resources",
+    "file": "mathfonts.txt",
+    "source": "ThirdParty/Dependencies/SwiftMath/Sources/SwiftMath/mathFonts.bundle/LICENSE",
+    "sha256": "431b2cb82b8a55977323598231f1baa44f32accac1231b4781a9a393d0bc29ed"
+  },
+  {
+    "id": "stix",
+    "name": "STIX font notice",
+    "license": "SIL OFL 1.1",
+    "purpose": "Math font license supplied with SwiftMath",
+    "file": "stix.txt",
+    "source": "ThirdParty/Dependencies/SwiftMath/Sources/SwiftMath/mathFonts.bundle/OFL.txt",
+    "sha256": "a96bed88f867f6a5bbe78ced4ca52a3ce6e002475363d86edd9097b2f8206d8d"
+  },
+  {
+    "id": "gust",
+    "name": "GUST math fonts",
+    "license": "GUST Font License",
+    "purpose": "Latin Modern and TeX Gyre fonts",
+    "file": "gust.txt",
+    "source": "ThirdParty/Dependencies/SwiftMath/Sources/SwiftMath/mathFonts.bundle/GUST-FONT-LICENSE.txt",
+    "sha256": "2bd69affc3da00715116f713f57eab9707e96daf3562ad0215987b15b9c16f73"
+  },
+  {
+    "id": "tree-sitter",
+    "name": "Tree-sitter 0.25.10",
+    "license": "MIT",
+    "purpose": "Incremental syntax parsing",
+    "file": "tree-sitter.txt",
+    "source": "ThirdParty/LanguageTools/TreeSitter/LICENSE",
+    "sha256": "5f9cf9fb6acb1972b35ae29119ce563bb60ec097656bc4b69b9bac2d04c7a147"
+  },
+  {
+    "id": "tree-sitter-r",
+    "name": "tree-sitter-r",
+    "license": "MIT",
+    "purpose": "R syntax grammar",
+    "file": "tree-sitter-r.txt",
+    "source": "ThirdParty/LanguageTools/TreeSitter/r/LICENSE",
+    "sha256": "de2e49529f03d573bc3fa229dc83acfe22c63a5ad1766b289563edfd45b72dea"
+  },
+  {
+    "id": "tree-sitter-markdown",
+    "name": "tree-sitter-markdown 0.5.3",
+    "license": "MIT",
+    "purpose": "Markdown syntax grammar",
+    "file": "tree-sitter-markdown.txt",
+    "source": "ThirdParty/LanguageTools/TreeSitter/MARKDOWN-LICENSE",
+    "sha256": "52ec8a1bf8256511e2a92613e0bb41ffefba3897f16fa958d7bb28c466dd4804"
+  },
+  {
+    "id": "unicode",
+    "name": "Unicode data (Tree-sitter)",
+    "license": "Unicode license",
+    "purpose": "Character classification",
+    "file": "unicode.txt",
+    "source": "ThirdParty/LanguageTools/TreeSitter/lib/src/unicode/LICENSE",
+    "sha256": "6a18c5fac70d7860b57f5b72b4e2c9a1ba6b3d2741eef7ff9767c5379364f10d"
+  },
+  {
+    "id": "air",
+    "name": "Air 0.13.0",
+    "license": "MIT",
+    "purpose": "R code formatting",
+    "file": "air.txt",
+    "source": "DesktopApp/Resources/LanguageTools/AIR-LICENSE",
+    "sha256": "19713ea69a4231105033c381dc2145148d26eab51e0b7e458ef4e775db531863"
+  },
+  {
+    "id": "raven",
+    "name": "Raven 0.21.1 (locally patched)",
+    "license": "GPL-3.0",
+    "purpose": "R completion language server",
+    "file": "raven.txt",
+    "source": "DesktopApp/Resources/LanguageTools/RAVEN-LICENSE",
+    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  {
+    "id": "beautiful-mermaid",
+    "name": "beautiful-mermaid 1.1.3",
+    "license": "MIT",
+    "purpose": "Native diagram rendering assets",
+    "file": "beautiful-mermaid.txt",
+    "source": "DesktopApp/Resources/RecordPreviewAssets/Mermaid/licenses/LICENSE-beautiful-mermaid",
+    "sha256": "f05f5a4009eae7fadfd4a55f77ffe10948f621982d56076667e68afbb54de894"
+  },
+  {
+    "id": "elkjs",
+    "name": "elkjs",
+    "license": "EPL-2.0",
+    "purpose": "Diagram layout",
+    "file": "elkjs.txt",
+    "source": "DesktopApp/Resources/RecordPreviewAssets/Mermaid/licenses/LICENSE-elkjs",
+    "sha256": "89591d4578fb1ebd91501312a3d25f021bd865a2e436641c1cf7b1bc7e3c1617"
+  },
+  {
+    "id": "entities",
+    "name": "entities",
+    "license": "BSD-2-Clause",
+    "purpose": "Diagram text decoding",
+    "file": "entities.txt",
+    "source": "DesktopApp/Resources/RecordPreviewAssets/Mermaid/licenses/LICENSE-entities",
+    "sha256": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164"
+  }
+]

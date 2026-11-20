@@ -1,0 +1,182 @@
+import AppKit
+import SwiftMath
+
+// MARK: - MathRenderer
+//
+// A pluggable math-typesetting engine. `SwiftMathRenderer` wraps the bundled,
+// always-available SwiftMath renderer; other engines (e.g. a future RaTeX
+// extension) implement the same interface so `EditorTextView` (edit mode) and
+// `DocumentHTML` (read mode) don't care which one draws math — both render
+// through the `MathRendering` coordinator below instead of calling a specific
+// engine directly.
+
+/// One rendered equation, tinted to the requested color: the image plus the
+/// typographic ascent/descent needed to sit it on the surrounding text's
+/// baseline (inline math) or split its reserved space correctly (display
+/// math). `ascent + descent == image.size.height`.
+public struct RenderedMath {
+    public let image: NSImage
+    /// Height above the baseline.
+    public let ascent: CGFloat
+    /// Height below the baseline (>= 0).
+    public let descent: CGFloat
+    public var size: CGSize { image.size }
+}
+
+/// A math-typesetting engine. Renders LaTeX to an image plus the metrics
+/// needed to place it against surrounding text. `@MainActor` because
+/// rendering touches AppKit drawing (SwiftMath's `MTMathUILabel`, `NSImage`).
+@MainActor
+public protocol MathRenderer: AnyObject {
+    /// Stable identity, distinguishing engines (e.g. "swiftmath").
+    var id: String { get }
+    /// Whether this renderer can render right now (loaded, no pending
+    /// download/install).
+    var isReady: Bool { get }
+    /// Renders `latex`; `displayMode` selects block vs inline typesetting.
+    /// Returns `nil` when the engine can't render it (unknown command, parse
+    /// error, not ready) so the caller can fall back to another engine or
+    /// show the raw source. `scale` is the destination's backing scale: the
+    /// image is a bitmap at that scale with the baseline on a pixel boundary
+    /// (whole-pixel `ascent` and `descent`), so it can be placed on the text
+    /// baseline exactly.
+    func render(latex: String, displayMode: Bool,
+                pointSize: CGFloat, color: NSColor, scale: CGFloat) -> RenderedMath?
+}
+
+/// Wraps SwiftMath — bundled, native, always ready. The default (and, today,
+/// only) renderer. Folds together the render+metrics logic that used to be
+/// duplicated between `EditorTextView.mathOverlay` (edit mode) and
+/// `DocumentHTML.fillMath`'s private `mathImage` (read mode), so both
+/// back-ends share one implementation.
+@MainActor
+public final class SwiftMathRenderer: MathRenderer {
+    public let id = "swiftmath"
+    public var isReady: Bool { true }
+
+    private final class Cached {
+        let image: NSImage
+        let ascent: CGFloat
+        let descent: CGFloat
+        init(image: NSImage, ascent: CGFloat, descent: CGFloat) {
+            self.image = image
+            self.ascent = ascent
+            self.descent = descent
+        }
+    }
+
+    /// Rendered math is cached so repeated renders of the same equation (a
+    /// keystroke restyle, or the same equation appearing more than once in a
+    /// read-mode export) don't re-typeset. The key encodes everything that
+    /// affects the pixels/metrics: latex, display vs inline, font size, and
+    /// the resolved color.
+    // NSCache is internally thread-safe; `nonisolated(unsafe)` opts it out of
+    // the Swift 6 Sendable check (in practice it's only touched on the main actor).
+    nonisolated(unsafe) private let cache = NSCache<NSString, Cached>()
+
+    public init() {}
+
+    public func render(latex: String, displayMode: Bool,
+                       pointSize: CGFloat, color: NSColor, scale: CGFloat) -> RenderedMath? {
+        let key = "\(displayMode ? "D" : "I")|\(String(format: "%.1f", pointSize))|\(scale)|" +
+                  "\(String(format: "%.3f,%.3f,%.3f,%.3f", color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent))|" +
+                  latex as NSString
+
+        if let cached = cache.object(forKey: key) {
+            return RenderedMath(image: cached.image, ascent: cached.ascent, descent: cached.descent)
+        }
+
+        let mode: MTMathUILabelMode = displayMode ? .display : .text
+        let label = MTMathUILabel()
+        label.latex = latex
+        label.fontSize = pointSize
+        label.labelMode = mode
+        label.textAlignment = .left
+        label.textColor = color
+        label.layout()
+        guard label.error == nil, let list = label.displayList else { return nil }
+
+        // Drawn from SwiftMath's display list ourselves rather than through
+        // `MTMathImage.asImage`: that image is vector at a fractional height
+        // (width ceiled to whole points), so where its glyphs landed depended
+        // on how the draw rect rounded — math sat a pixel off the text at 1x,
+        // and rasterizing it again smeared it. Here the bitmap is built at the
+        // destination scale with whole device pixels either side of the
+        // baseline, the same shape RaTeX produces.
+        //
+        // The layout copies asImage's: `insetPad` above and below keeps a
+        // glyph's ink overshoot from being clipped at the image edge, and a
+        // list shorter than half the font size (a lone x/c/n) is re-centered
+        // in that height, as asImage does.
+        let insetPad: CGFloat = 2
+        let clamped = max(list.ascent + list.descent, pointSize / 2)
+        let descent = (list.ascent + list.descent - clamped) / 2 + list.descent + insetPad
+        let ascent = clamped + 2 * insetPad - descent
+        let descentPx = Int((descent * scale - 0.01).rounded(.up))
+        let ascentPx = Int((ascent * scale - 0.01).rounded(.up))
+        let pxW = max(1, Int((list.width * scale).rounded()))
+        guard let ctx = CGContext(data: nil, width: pxW, height: descentPx + ascentPx,
+                                  bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        // A raw bitmap context defaults antialiasing and font smoothing off,
+        // and quantizes glyph origins; match the RaTeX renderer's settings.
+        ctx.setShouldAntialias(true)
+        ctx.setShouldSmoothFonts(true)
+        ctx.setAllowsFontSmoothing(true)
+        ctx.setShouldSubpixelPositionFonts(true)
+        ctx.setShouldSubpixelQuantizeFonts(false)
+        ctx.setAllowsFontSubpixelQuantization(false)
+        ctx.scaleBy(x: scale, y: scale)
+        // The zero-size label left the list's baseline at y = descent - clamped/2
+        // (x = 0); move it onto the whole-pixel row `descentPx`.
+        ctx.translateBy(x: 0, y: CGFloat(descentPx) / scale - (list.descent - clamped / 2))
+        list.draw(ctx)
+        guard let cgImage = ctx.makeImage() else { return nil }
+
+        let box = NSSize(width: CGFloat(pxW) / scale, height: CGFloat(descentPx + ascentPx) / scale)
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        rep.size = box
+        let image = NSImage(size: box)
+        image.addRepresentation(rep)
+
+        let result = RenderedMath(image: image, ascent: CGFloat(ascentPx) / scale,
+                                  descent: CGFloat(descentPx) / scale)
+        cache.setObject(Cached(image: image, ascent: result.ascent, descent: result.descent), forKey: key)
+        return result
+    }
+}
+
+/// Native SwiftMath rendering shared by inline and display equations.
+@MainActor
+public final class MathRendering {
+    public static let shared = MathRendering()
+
+    public let swiftMath = SwiftMathRenderer()
+    private init() {}
+
+    public var active: MathRenderer { swiftMath }
+
+    /// `scale` defaults to 2x, which Read mode's PNGs use regardless of screen.
+    public func render(latex: String, displayMode: Bool,
+                       pointSize: CGFloat, color: NSColor, scale: CGFloat = 2) -> RenderedMath? {
+        swiftMath.render(latex: latex, displayMode: displayMode,
+                         pointSize: pointSize, color: color, scale: scale)
+    }
+
+    /// Call after switching the active engine (or finishing an install) so
+    /// on-screen equations re-render with the new engine.
+    public func engineDidChange() {
+        NotificationCenter.default.post(name: .renderEngineChanged, object: nil)
+    }
+}
+
+public extension Notification.Name {
+    /// Posted when a rendering engine is switched, installed, or uninstalled —
+    /// by `MathRendering.engineDidChange()`, and by `AppSettings` when an
+    /// extension is enabled or disabled. Editors observe this and recompose
+    /// their blocks (narrowest recompose that covers them); Read mode
+    /// re-renders. Deliberately not math-specific: one signal for "what draws
+    /// this document changed" beats one per engine.
+    static let renderEngineChanged = Notification.Name("EdmundCore.renderEngineChanged")
+}

@@ -1,0 +1,55 @@
+---
+title: "执行边界：预期错误不是故障"
+execute:
+  error: false
+  cache: false
+---
+
+# 批量跳过、普通错误继续与首错停止
+
+这份文件专门包含预期错误。第一次运行全部应成功3块、跳过1块、失败2块，最后一块未运行。后半段“首错停止”是有意设计，不代表软件损坏。
+
+```{r}
+#| label: policy-setup
+policy_counter <- 1L
+cat("POLICY_SETUP_OK\n")
+```
+
+```{r}
+#| label: policy-skip
+#| eval: false
+policy_counter <- policy_counter + 1000L
+stop("THIS_SKIPPED_BLOCK_MUST_NOT_RUN")
+```
+
+```{r}
+#| label: policy-continue-error
+#| error: true
+stop("EXPECTED_CONTINUABLE_ERROR")
+```
+
+```{r}
+#| label: policy-after-continue
+policy_counter <- policy_counter + 1L
+stopifnot(policy_counter == 2L)
+cat("POLICY_CONTINUED_OK\n")
+```
+
+```{r}
+#| label: policy-objects
+policy_list <- list(a = 1, b = data.frame(x = 1:5))
+cat("POLICY_OBJECTS_OK\n")
+```
+
+```{r}
+#| label: policy-stop
+stop("EXPECTED_STOP_ON_FIRST_ERROR")
+```
+
+```{r}
+#| label: policy-not-run
+policy_counter <- policy_counter + 100L
+cat("POLICY_THIS_MUST_NOT_RUN_IN_BATCH\n")
+```
+
+接着可手动运行末块、在提示中取消重启、确认重启再运行。运行当前块可以覆盖 eval:false；默认“运行全部”必须遵守跳过规则。

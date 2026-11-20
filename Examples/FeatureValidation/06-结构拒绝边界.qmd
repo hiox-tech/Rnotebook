@@ -1,0 +1,25 @@
+---
+title: "预期结构拒绝：不要当作可完整运行的示例"
+---
+
+# 局部正常块
+
+```{r}
+#| label: structural-safe
+cat("STRUCTURE_MANUAL_SAFE_OK\n")
+```
+
+# 引用容器的定位边界
+
+下面是当前明确不支持逐块定位的嵌套容器，应用应拒绝批量运行并说明原因，不能误执行。上面的独立正常块仍可手动运行。
+
+> ```{r}
+> stop("UNSUPPORTED_NESTED_BLOCK_MUST_NOT_RUN")
+> ```
+
+# 未闭合围栏
+
+下块有意没有结束围栏，运行和格式化都应拒绝，正文必须保持。
+
+```{r}
+stop("UNCLOSED_BLOCK_MUST_NOT_RUN")

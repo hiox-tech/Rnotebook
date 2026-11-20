@@ -1,0 +1,185 @@
+import AppKit
+
+/// Caret-movement handling: when the caret crosses into a different block we
+/// restyle the old and new active blocks (revealing/hiding their raw markdown);
+/// within a block we just update which token's delimiters are shown.
+extension EditorTextView {
+
+    @objc func selectionDidChange(_ notification: Notification) {
+        traceEdit("selectionDidChange")
+        // Before the guards below: the caret's own line number is inked as body
+        // text, so it has to repaint on every caret move, including the ones
+        // that bail out of restyling. Marks only the numbers' strip.
+        invalidateLineNumbers()
+        // Source has no active Markdown blocks to reveal. Re-styling here
+        // discards host syntax/row attributes and briefly reflows the viewport.
+        guard viewMode != .source else { return }
+        // A caret inside a table cell too wide for its column is drawn by hand,
+        // because AppKit's would sit on the cell's hidden characters rather than
+        // its visible text. See EditorTextView+TableCellCaret.
+        updateWrappedCaret()
+        // A row or column picked by its pill stays picked only as long as the
+        // selection is still exactly that row or column.
+        if let state = tableAxisSelectionState,
+           selectedRanges.map(\.rangeValue) != state.ranges {
+            tableAxisSelectionState = nil
+        }
+        // The row and column handles hang off the caret's cell, or off a
+        // picked row or column, so they move with the selection.
+        invalidateTableHandles()
+        // The `</>` button steps aside for the row pill when the header row
+        // becomes active, so a caret move relocates it — repaint old and new.
+        invalidateTableRawButtons()
+        // Crossing into a different cell is the one moment the pills, the cell
+        // outline and the `</>` position all move at once. Band invalidation is
+        // unreliable exactly here — a wrapped table restyles on the way, so the
+        // grid is briefly unavailable and the bands come out empty — which is why
+        // stale pills lingered. A full repaint on the cell transition (only then,
+        // not per keystroke) is the one thing that cannot leave chrome behind.
+        let cellKey = activeTableCell.map { "\($0.blockIndex).\($0.row).\($0.column)" }
+        if cellKey != lastActiveTableCellKey {
+            lastActiveTableCellKey = cellKey
+            needsDisplay = true
+        }
+        // A selection change landing mid-recompose is the drift signature
+        // (issue #156); the stack names the AppKit path that moved the caret.
+        if isUpdating { traceSelectionOrigin() }
+        guard !isUpdating else { return }
+        // NSTextView moves the selection DURING an edit, before didChangeText
+        // runs the sync — at that moment `blocks` still has pre-edit ranges.
+        // Styling here would apply stale ranges/content against the new text,
+        // spilling wrong attributes across block boundaries. The pending edit
+        // is exactly the "storage ahead of blocks" signal; didChangeText's
+        // flush styles the active block anyway.
+        if let storage = textStorage as? EditorTextStorage,
+           storage.pendingEdit != nil { return }
+        // Don't restyle while an input method is composing (see didChangeText).
+        guard !hasMarkedText() else { return }
+
+        let sel = selectedRange()
+        let rawOffset = sel.location
+        let newActiveIndex = blockIndexForRawOffset(rawOffset)
+        let emptyEndLine = sel.length == 0 && rawOffset == (textStorage?.length ?? -1)
+            && newActiveIndex.map { blocks[$0].range.length == 0 && blocks[$0].kind == .blank } == true
+        if emptyEndLine, newActiveIndex == activeBlockIndex {
+            typingAttributes = baseAttributes
+            if !suppressTypewriterCentering { scrollCursorToCenter() }
+            return
+        }
+
+        // Showing a table raw is a per-table request made with its `</>`
+        // button, so leaving the table takes it back — otherwise the next
+        // table the caret entered would come up raw too.
+        if newActiveIndex != activeBlockIndex { rawTableEditing = false }
+
+        if newActiveIndex != activeBlockIndex && !pendingRecompose {
+            pendingRecompose = true
+            // Capture the flag now — it's reset synchronously after mouseDown
+            // returns, before this async block runs.
+            let fromMouse = suppressTypewriterCentering
+            let activate: @MainActor @Sendable () -> Void = { [weak self, fromMouse] in
+                guard let self = self else { return }
+                // Always clear the flag first. If we bail out below (a recompose is
+                // mid-flight and will set the active block itself), leaving it set
+                // would permanently wedge active-block switching — the cursor could
+                // never re-activate a block, so e.g. a callout would stay rendered
+                // with un-editable zero-width marker characters.
+                self.pendingRecompose = false
+                guard !self.isUpdating else { return }
+                // Never restyle (mutate storage / invalidate layout) while an
+                // input method is composing. This async block was scheduled
+                // before composition began, so — unlike the synchronous guard
+                // above — `hasMarkedText()` can have flipped true in between.
+                // Running `recomposeDirty` over storage that holds a live
+                // composition can strand the marked text in the input context,
+                // after which `didChangeText` keeps bailing on its own
+                // marked-text guard and the storage/`rawSource` invariant breaks
+                // — the "delete drift" bug. The active-block restyle is applied
+                // anyway when composition commits (didChangeText → recomposeDirty).
+                guard !self.hasMarkedText() else { return }
+
+                // Restyle the new active block now. DEFER the old active block
+                // if it's off screen: deactivating it (rendered ↔ raw — callout
+                // box, checklist marker, …) changes its height, and doing that
+                // synchronously while the user is looking elsewhere shifts the
+                // whole viewport. Marking it unstyled hands it to the async
+                // drain, which TextKit 2 lays out without disturbing the
+                // viewport. Don't re-set the selection (that triggers AppKit's
+                // autoscroll-to-selection on stale layout).
+                let loc = self.selectedRange().location
+                let newIdx = self.blockIndexForRawOffset(loc)
+                let emptyEndLine = self.selectedRange().length == 0
+                    && loc == (self.textStorage?.length ?? -1)
+                    && newIdx.map { self.blocks[$0].range.length == 0 && self.blocks[$0].kind == .blank } == true
+                // The table being left, if it was edited: aligned below, once
+                // the blocks are restyled for where the caret now is.
+                let leftTable = self.tableFormatPending
+                    ? self.activeBlockIndex.flatMap { $0 != newIdx ? $0 : nil } : nil
+                if self.activeBlockIndex != newIdx { self.tableFormatPending = false }
+                var dirty = IndexSet()
+                if let n = newIdx, !emptyEndLine { dirty.insert(n) }
+                var deferred = false
+                if let old = self.activeBlockIndex, old != newIdx, old < self.blocks.count {
+                    let block = self.blocks[old]
+                    let needsRestyle = !emptyEndLine || !SyntaxHighlighter.parse(block.content,
+                        linkDefinitions: self.linkDefState.definitions(for: block.content), features: self.markdownFeatures).isEmpty
+                    if needsRestyle {
+                        if self.syncStylingBlockRange()?.contains(old) == true {
+                            dirty.insert(old)   // visible — restyle in place
+                        } else {
+                            self.setStyled(old, false)   // off screen — defer
+                            deferred = true
+                        }
+                    }
+                }
+                if dirty.isEmpty {
+                    // The zero-length EOF block has no markup to reveal. In
+                    // particular, do not rewrite its preceding newline: that
+                    // changes TextKit's extra-line metrics after a click.
+                    self.activeBlockIndex = newIdx
+                    self.appliedCursorSpans = nil
+                    self.typingAttributes = self.baseAttributes
+                    if self.typewriterModeEnabled && !fromMouse { self.scrollCursorToCenter() }
+                    if deferred { self.scheduleProgressiveStyling() }
+                    if let leftTable { self.formatTableOnLeaving(leftTable) }
+                    return
+                }
+                let restyleStart = CFAbsoluteTimeGetCurrent()
+                defer {
+                    self.traceEdit("active-block restyle took "
+                                   + "\(Int((CFAbsoluteTimeGetCurrent() - restyleStart) * 1000)) ms "
+                                   + "fromMouse=\(fromMouse) dirty=\(dirty.count)")
+                }
+                // Only the new (visible) active block changes height now, so the
+                // caret anchor's delta is small and reliable. Typewriter mode
+                // centers on the post-restyle layout instead.
+                if self.typewriterModeEnabled && !fromMouse {
+                    self.recomposeDirty(dirty, cursorInRaw: loc)
+                    self.scrollCursorToCenter()
+                } else {
+                    self.preservingViewportAnchor {
+                        self.recomposeDirty(dirty, cursorInRaw: loc)
+                    }
+                }
+                if deferred { self.scheduleProgressiveStyling() }
+                if let leftTable { self.formatTableOnLeaving(leftTable) }
+            }
+            if emptyEndLine {
+                // TextKit creates the final empty insertion line from typing
+                // attributes. Do not paint that provisional geometry and then
+                // move it again in a queued paragraph restyle after the click.
+                activate()
+            } else {
+                DispatchQueue.main.async { activate() }
+            }
+            return
+        } else if newActiveIndex == activeBlockIndex {
+            // Same block — update active token (re-style to show/hide delimiters)
+            applyBlockStyle()
+            // A caret move (never typing — that returned on `pendingEdit`
+            // above) settles the word it left, which the edit path spared.
+            if let idx = newActiveIndex { recheckSpelling(blocks: [idx]) }
+        }
+        if !suppressTypewriterCentering { scrollCursorToCenter() }
+    }
+}

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook 帮助"><meta name="description" content="认识 Rnotebook"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>认识 Rnotebook</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">使用手册</a></nav><main><a name="rnotebook-overview" id="rnotebook-overview"></a><h1 id="title">认识 Rnotebook</h1>
+<p>Rnotebook 是 macOS 上面向 R 分析与报告写作的笔记工具。用一份 <code>.qmd</code> 或 <code>.rmd</code> 文件保存说明文字、计算代码和报告配置，在文中运行 R 查看结果，再通过 Quarto 生成可分享的 HTML、Word 或 PDF。</p>
+<figure><img src="../images/workspace-visual-zh.png" alt="Visual 编辑界面：正文与 R 代码位于左侧，文档的 R 状态、变量和包位于右侧。"><figcaption>Visual 编辑界面：正文与 R 代码位于左侧，文档的 R 状态、变量和包位于右侧。</figcaption></figure>
+<h2 id="section-0">适合怎样的工作</h2>
+<ul><li>分析笔记：记录数据来源、清洗步骤、计算和结论，减少代码与解释分散的问题。</li><li>课程与研究：把公式、表格、绘图和推导写在一起，边运行边检查。</li><li>重复报告：将读取数据、分析和绘图写成代码，数据更新后重新渲染。</li><li>轻量写作：只编辑 Markdown、插入图片和公式时，无须启动 R。</li></ul>
+<h2 id="section-1">主要功能</h2>
+<div class="table-scroll"><table><thead><tr><th>任务</th><th>使用方式</th></tr></thead><tbody><tr><td>编写笔记</td><td>Code 精确编辑源码，Visual 查看排版并使用格式工具</td></tr><tr><td>执行计算</td><td>运行当前块、选区、全部、以上或以下 R 块；支持中断</td></tr><tr><td>检查数据</td><td>变量筛选、继续载入、只读对象预览；包搜索与安装</td></tr><tr><td>整理长文档</td><td>Code 折叠、minimap、Visual 标题导航、查找与替换</td></tr><tr><td>生成报告</td><td>选择 YAML 或自定义参数，导出 HTML、Word、LaTeX PDF、Typst PDF</td></tr><tr><td>管理文稿</td><td>原生打开、保存、自动保存、外部修改对比和未保存草稿恢复</td></tr></tbody></table></div>
+<h2 id="section-2">文稿、会话和报告分别保存什么</h2>
+<p><strong>文稿</strong>保存 Markdown 原文、R 代码和 YAML 配置。<strong>R 会话</strong>保存本窗口当前运行产生的对象和交互结果。<strong>报告</strong>是 Quarto 根据文稿生成的另一份文件。保存文稿不会把 R 内存或交互输出写入正文；重新打开笔记后，需要执行代码来重新获得结果。</p>
+<p>图片、CSV 和参考文献保持普通文件。例如 <code>报告.qmd</code> 引用 <code>data/测量.csv</code>，分享时应保留相应目录关系。软件采用编辑器与右侧检查器两栏；每份文稿使用独立窗口和 R 会话。</p>
+<h2 id="section-3">阅读路线</h2>
+<p>第一次使用先看<a href="components.html">组件与环境</a>，对照<a href="interface.html">界面导览</a>，再按<a href="quick-start.html">快速开始</a>完成一份报告。查写法时可直接搜索，或打开<a href="syntax.html">Quarto语法</a>、<a href="r-basics.html">R 基础</a>和<a href="quarto-basics.html">Quarto 与 QMD 基础</a>。</p></main></body></html>

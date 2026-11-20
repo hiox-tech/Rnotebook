@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook 帮助"><meta name="description" content="组件与环境"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>组件与环境</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">使用手册</a></nav><main><a name="rnotebook-components" id="rnotebook-components"></a><h1 id="title">组件与环境</h1>
+<p>Rnotebook 负责编辑和组织操作；R 负责统计计算；Quarto 负责把文稿排版为报告。理解三者的分工，有助于定位“能编辑但不能运行”或“能运行但不能导出”的问题。</p>
+<h2 id="section-0">各组件做什么</h2>
+<div class="table-scroll"><table><thead><tr><th>组件</th><th>用途</th><th>提供方式</th></tr></thead><tbody><tr><td>原生 Code / Visual 编辑器</td><td>Markdown 解析、排版、公式、表格、图片和导航</td><td>随应用提供；基于裁剪并适配的 Edmund、swift-markdown、SwiftMath</td></tr><tr><td>语法与 R 编辑辅助</td><td>Markdown/R 高亮、R 补全、当前块格式化</td><td>内置 Tree-sitter、Raven 和 Air</td></tr><tr><td>R / Rscript</td><td>执行 R 代码，创建变量与图形</td><td>使用本机安装的 R，设置中选择 Rscript</td></tr><tr><td>R 包库</td><td>为代码提供函数；运行与导出需要的包从中加载</td><td>使用环境页指定的安装目录及 R 可用库</td></tr><tr><td>Quarto</td><td>读取 QMD/RMD、执行文稿并调用排版引擎</td><td>使用本机 Quarto</td></tr><tr><td>PDF 排版引擎</td><td>生成 PDF</td><td>LaTeX 使用本机 TeX 环境；Typst 由可用的 Quarto 工具链处理</td></tr><tr><td>Finder Quick Look</td><td>不启动 R 即可预览 QMD/RMD</td><td>随应用提供，支持 Code / Visual</td></tr></tbody></table></div>
+<p>Raven 提供补全，Air 调整 R 代码格式；它们不代替负责计算的 R 会话。Markdown 是文本标记语法，QMD 在此基础上加入文稿配置和可执行代码。<code>.rmd</code> 也能编辑和运行常见 R 块；本软件导出使用 Quarto。</p>
+<h2 id="section-1">配置环境的步骤</h2>
+<figure><img src="../images/settings-environment-zh.png" alt="环境设置：选择 Rscript、Quarto 和 R 包目录，并查看依赖状态。"><figcaption>环境设置：选择 Rscript、Quarto 和 R 包目录，并查看依赖状态。</figcaption></figure>
+<ol><li>安装适合本机的 R 和 Quarto，打开“Rnotebook → 设置… → 环境”。</li><li>检查 Rscript 与 Quarto 检测结果；路径不正确时，点击选择并指定相应可执行文件。</li><li>需要指定包安装位置时选择 R 包目录。根据界面依赖状态，明确安装缺失包。</li><li>更换 R 或包目录后，重启文档的 R 会话，让新的配置生效。</li><li>在新笔记的 R 块中运行 <code>R.version.string</code> 和 <code>1 + 1</code>，确认版本与计算结果。</li></ol>
+<p>R 安装包入口见 <a href="https://www.r-project.org/" target="_blank" rel="noopener">R 项目</a>，Quarto 安装说明见 <a href="https://quarto.org/docs/get-started/" target="_blank" rel="noopener">Quarto 入门</a>。</p>
+<h2 id="section-2">依赖按任务准备</h2>
+<p>只写文字需要编辑器即可。交互运行需要 R 及界面提示的运行依赖；代码调用 <code>ggplot2</code> 等包时，另行安装该包。Quarto 的 R 渲染使用 knitr 路线，需准备相应 R 包。HTML、Word 不依赖 TeX；LaTeX PDF 需要 TeX、所用字体和文稿要求的宏包，中文文稿还要配置中文支持。</p>
+<p>“关于 Rnotebook → 第三方组件与许可证…”列出应用附带组件及许可证原文。R、Quarto 和用户安装的 R 包由各自安装环境提供。</p></main></body></html>

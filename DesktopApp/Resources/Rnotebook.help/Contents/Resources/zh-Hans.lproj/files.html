@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook 帮助"><meta name="description" content="保存、恢复与设置"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>保存、恢复与设置</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">使用手册</a></nav><main><a name="rnotebook-files" id="rnotebook-files"></a><h1 id="title">保存、恢复与设置</h1>
+<p>笔记、恢复草稿、R 内存和导出报告是不同内容。了解各自的保存方式，能更清楚地处理外部修改。</p>
+<h2 id="section-0">保存与自动保存</h2>
+<p>⌘S 保存，⇧⌘S 另存为。新文档允许先写后命名；首次运行或渲染前通过系统保存面板确定位置。另存到其他目录不会自动复制图片或数据。</p>
+<p>设置→文档默认开启已命名文档自动保存：停笔约 1 秒、持续输入最长约 5 秒。停笔可选 0.5/1/2/5 秒，最长间隔可选 5/10/30/60 秒。关闭后使用手动保存，关闭有修改的文档时选择保存、不保存或取消。</p>
+<h2 id="section-1">外部修改与版本对比</h2>
+<p>默认自动加载或三方合并无冲突的外部修改。可关闭自动加载，改为先比对再选择。无论是否启用自动保存，外部修改检测和写入前检查都会保留。</p>
+<p>出现冲突时保存暂停。对比窗口中可用行号、橙/绿差异、上一处/下一处、同步滚动及共同基准核对全文：</p>
+<ul><li><strong>使用外部版本</strong>：载入磁盘内容，替换当前编辑器内容。</li><li><strong>使用编辑器版本</strong>：将当前编辑器内容写入文件。</li><li><strong>暂不处理</strong>：继续暂停保存，稍后从文件→文档同步→比对版本再次打开。</li></ul>
+<p>选择前会再次核对双方内容。文件被移除时不能选择外部版本。阅读对比不会执行代码。</p>
+<h2 id="section-2">恢复与缓存</h2>
+<p>未保存的修改有内部恢复草稿保护，即使关闭自动保存也保持。中断后从“文件 → 恢复未保存文档…”或“设置 → 通用 → 管理恢复草稿…”查看。恢复打开副本，不直接覆盖原文件，不恢复 R 内存或历史输出。</p>
+<p>设置→通用可清理已结束任务的缓存。运行中的任务、恢复草稿、包库和用户文件不按缓存清理；不要把缓存清理当作删除笔记或卸载包。</p>
+<h2 id="section-3">窗口和编辑偏好</h2>
+<p>默认记住文档窗口大小、位置及检查器宽度，新文档沿用最近布局。设置窗口保留位置与上次页面。可在设置→文档关闭窗口记忆，或从窗口菜单恢复当前默认布局。</p>
+<p>通用页调整语言、外观、主题色及存储入口；文档页管理自动保存、外部修改与窗口记忆；字体、高亮、补全和格式化各有独立页面；环境页选择 Rscript、Quarto 和 R 包目录。环境中的 R/包库变更需要重启 R。</p>
+<h2 id="section-4">Finder 预览</h2>
+<p>QMD/RMD 可通过 Finder Quick Look 预览，切换源代码/可视化。预览只读，不执行 R 代码；长文档可以滚动。编辑和运行请在文档窗口进行。</p></main></body></html>

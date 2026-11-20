@@ -1,0 +1,65 @@
+{
+  "id": "notebook-code-caret-layout-v14",
+  "date": "2026-11-02",
+  "upstreamCommit": "ae86e2a80a3e937fb728731ed085b995ceb0a77d",
+  "scope": "Source-only caret, table-chrome and empty-caret drag tracking fixes; optional per-editor application selection accent in source and notebook, resolved in the editor appearance and repainted without document attribute edits. Nil retains upstream selection palettes. No undo or layout-engine replacement. v4 aligns source line numbers to actual TextKit glyph baselines across font and size changes, including trailing empty rows; notebook cap-centering is unchanged. v5 adds read-only code-block margin anchors and slot/palette access for optional host companion actions. Native copy drawing, hover, clipboard, mouse handling and layout remain unchanged. v6 reserves the fixed bullet/checkbox marker width even when the initial host column is zero-width, and renders one visual gap after unordered bullet markers while preserving all source whitespace. No change to the parser, native copy buttons, or layout engine. v7 adds an optional per-editor Markdown paste representation provider after native image/list/cell handling, so a host can consume its own result clipboard text without importing NSTextTable RTF into TextKit 2. Nil preserves upstream paste behavior. v8 adds optional per-editor embedded-view cursor and rectangle providers. Native mouseMoved/cursorUpdate use the host cursor before NSTextView can set its I-beam. The editor cursor rectangles exclude host child regions. Nil providers preserve native behavior; the host resolves child hit testing, cursor types and refresh after native enter/exit and scrolling. No click, drag, selection, text or layout changes. v9 adds optional per-editor source font/paragraph attributes shared by initial source styling, native recompose and typing (nil preserves upstream). Adds opt-in preservation of the clip X origin for vertical navigation (existing default remains). Provides SHA-256-verified bundled Mermaid loading through the existing renderer and resolves compound-class SVG paint for native XY bars/lines. No undo, business execution, WebView rendering or layout-engine replacement. Mermaid fences participate in the existing viewport-anchored content-width restyle so native overlays follow window resizing. v10 avoids restyling the zero-length trailing blank on selection: its preceding newline and extra-line geometry remain untouched. An empty EOF activation updates typing/active state synchronously; old Markdown requiring deactivation retains its styling path. Nonempty endpoints and other selections retain deferred activation. Host source colors are separately finalized in willProcessEditing before layout. v11 derives source line-number chrome from the provisional storage edit during IME, without committing/restyling marked text. Source rows including EOF are enumerated once by logical display offsets; provisional empty-row geometry cannot overlap the preceding row. Marked edits repaint line-number chrome. Notebook geometry and public committed line lookups remain unchanged. v12 clears native margin hover state directly when a host child owns a mouseMoved event. Only a genuine mouseExited event is passed to NSTextView.mouseExited, avoiding AppKit trackingArea assertions. Host cursor precedence, real exit behavior and nil-provider paths are preserved. v13 finalizes the existing bounded viewport/caret layout after editing a Visual fenced block, before caret measurement and painting. Source mode, prose, IME marked edits and full-document layout are unchanged. v14 skips same-block caret-only restyling in an active fenced block: the complete fence source is already revealed, so crossing code rows or either delimiter changes no attributes. Text edits and block activation/deactivation retain their recomposition paths.",
+  "patch": "patches/Source-Caret-Presentation.patch",
+  "files": {
+    "TextView/EditorTextView+Find.swift": {
+      "upstreamSHA256": "967a957ac658277af470afe50bf63ebf37547a057afddeb9d2f0b631f3c7a40c",
+      "patchedSHA256": "58764b41e6dded1dc7a16b8fe84604c75974e11a9a04cc4e10675505139b8008"
+    },
+    "TextView/EditorTextView+SelectionTracking.swift": {
+      "upstreamSHA256": "4d6416774053d72fdab72d3ce1149946bec6909bbe08fdbc0f417a73d844e70f",
+      "patchedSHA256": "ad0916c0dda1ab0dcd1fb0e83953d7aef7e3cc9fd654b0f7a51767e2ea576873"
+    },
+    "TextView/EditorTextView+TableRawButton.swift": {
+      "upstreamSHA256": "7d8e68b93282c59b6d4a8760be1ea9b26a50e4cb5661e50922a429d6c47fb926",
+      "patchedSHA256": "5a1b7303323c0f271ce59dd4d350fa9d908189e341fea879ddf0c06a71f6bf38"
+    },
+    "TextView/EditorTextView.swift": {
+      "upstreamSHA256": "17c5112c346844a7355541503112944dfe736881184e178a870fed8913df879d",
+      "patchedSHA256": "d21058d41aec0392530c0d10569b060918213171ea8980e2f9118cd08ec8f992"
+    },
+    "TextView/EditorTextView+LineNumbers.swift": {
+      "upstreamSHA256": "a41efebf0f79daf45275b207e42c93db552aa4b5cae24e127a9c4f74d01f89e2",
+      "patchedSHA256": "71087b1d1066d6f4a64fdf1f460cdaae7b3a0bc55762c791d93a0aa610c8b96b"
+    },
+    "TextView/EditorTextView+CodeCopyButton.swift": {
+      "upstreamSHA256": "fa8710ce9c1bf188fda867c90ed5e3b178859d31c87b623e97a28afcbc859cb1",
+      "patchedSHA256": "377786defc7f07e7852396dd7536692d43be2028785a7d7b3bcbf57c058dfe4a"
+    },
+    "Rendering/EditorTextView+ListRendering.swift": {
+      "upstreamSHA256": "3e8e902b0ec5e771943b4b7a5e45a5275ff240d576b4af006ed176e452e3f1ec",
+      "patchedSHA256": "344e249d7a237d7e6b956b46c081e7e15c1070c9114b49c2208b7b3361e536ae"
+    },
+    "Editing/EditorTextView+TableCopy.swift": {
+      "upstreamSHA256": "a24ef1520d65b4b546286db5742fc04adcef8fd233cc9db610d338e80b318002",
+      "patchedSHA256": "94d0a3a4c0771b64b8854feafb47fee46dd656ca74f7c9e995964caa9b0e89d4"
+    },
+    "Rendering/EditorTextView+Rendering.swift": {
+      "upstreamSHA256": "8883811d4f6285ef50d1c64313000fe74aacec0f3c67eb0ed2fcefc77b497680",
+      "patchedSHA256": "bbfecffd034a7eb9e9b550b6e401aef34e0fff738f019ec0351dc4513df7799e"
+    },
+    "TextView/EditorTextView+EditFlow.swift": {
+      "upstreamSHA256": "5fb24a709c2d9bc3c70d50468710717c2b87e4b733b092c2210dba45e363b18f",
+      "patchedSHA256": "01dca64b04b70fb7f3df82df14466a6269535c63989eb88dbb0326d886c85008"
+    },
+    "Diagrams/MermaidRenderer.swift": {
+      "upstreamSHA256": "c7e81d8399aa942edf657ddee0a341c40284ada8855af3b85b558a9127871d25",
+      "patchedSHA256": "ea47ffe01d3038015df2485b477191f6b8ab902faf88c9769e9b7eb68a07c624"
+    },
+    "TextView/EditorTextView+TypewriterScroll.swift": {
+      "upstreamSHA256": "f29269e81cfe6bdf717e79a43c763b802530fc66639907c54e9f74428066be13",
+      "patchedSHA256": "df3bbb5810ca2d8901aacb7626e70fa06ab31f19fe6fd1638b7ac2ff1e8864d0"
+    },
+    "Diagrams/MermaidSVGFlattener.swift": {
+      "upstreamSHA256": "60fb8006aa40ad3fa274c40a449bbaefa5a2acc993b2098a6b6a938050145d7d",
+      "patchedSHA256": "25faf90b822f11e2680be23aed88a5ac566181c7f7b5e820fd2015c1c9d95b79"
+    },
+    "TextView/EditorTextView+ContentWidth.swift": {
+      "upstreamSHA256": "074aee6e464f1c90b1a77df8c172ef5a372087d3bffa8958896ea8d72cac7c7e",
+      "patchedSHA256": "dfdb0c89449aee842683214953e52b98ac0d0da3911543a46462b6f7a6ee0213"
+    }
+  }
+}

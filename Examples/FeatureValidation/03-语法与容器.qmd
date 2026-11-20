@@ -1,0 +1,70 @@
+---
+title: "字面示例、公式、HTML 与引用容器"
+execute:
+  cache: false
+---
+
+# 真正的 R 代码
+
+```{r}
+#| label: container-setup
+container_count <- 1L
+cat("CONTAINER_SETUP_OK\n")
+```
+
+## 四反引号包住的示例不能执行
+
+````markdown
+```{r}
+stop("LITERAL_FENCE_MUST_NOT_RUN")
+```
+````
+
+## 普通语言代码块不能执行
+
+```r
+stop("PLAIN_R_EXAMPLE_MUST_NOT_RUN")
+```
+
+## 公式中的围栏仅是文本
+
+$$
+\begin{aligned}
+x &= 1 \\
+y &= 2
+\end{aligned}
+$$
+
+<!--
+```{r}
+stop("HTML_COMMENT_MUST_NOT_RUN")
+```
+-->
+
+<pre>
+```{r}
+stop("RAW_HTML_MUST_NOT_RUN")
+```
+</pre>
+
+::: {.callout-note}
+## Div 中的正常代码
+
+```{r}
+#| label: container-div
+container_count <- container_count + 1L
+cat("CONTAINER_DIV_OK\n")
+```
+:::
+
+> 引用中的普通 R 示例（不交互运行）：
+>
+> ```r
+> stop("QUOTED_LITERAL_MUST_NOT_RUN")
+> ```
+
+```{r}
+#| label: container-checks
+stopifnot(container_count == 2L)
+cat("CONTAINER_VALIDATION_OK\n")
+```

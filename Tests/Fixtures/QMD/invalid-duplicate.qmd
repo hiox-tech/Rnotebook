@@ -1,0 +1,9 @@
+```{r}
+#| label: duplicate
+x <- 1
+```
+
+```{r}
+#| label: duplicate
+x <- 2
+```

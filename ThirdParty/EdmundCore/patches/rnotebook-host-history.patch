@@ -1,0 +1,1159 @@
+--- a/Sources/EdmundCore/Editing/EditorTextView+FormattingCore.swift
++++ b/Sources/EdmundCore/Editing/EditorTextView+FormattingCore.swift
+@@ -10,6 +10,16 @@
+ // always equals `rawSource` (rendering is attribute-only).
+ 
+ extension EditorTextView {
++
++    /// A host block action edits source without first moving the insertion
++    /// point into that block. Uses the same range edit and single undo record
++    /// as the native formatting commands.
++    public func replaceSource(in range: NSRange, with replacement: String, selecting selection: NSRange) {
++        guard isEditable, !hasMarkedText(), range.location >= 0,
++              range.upperBound <= (rawSource as NSString).length,
++              shouldChangeText(in: range, replacementString: replacement) else { return }
++        applyFormattingEdit(rawRange: range, replacement: replacement, select: selection)
++    }
+ 
+     // MARK: - Edit primitives
+ 
+--- a/Sources/EdmundCore/Rendering/EditorTextView+CodeHighlighting.swift
++++ b/Sources/EdmundCore/Rendering/EditorTextView+CodeHighlighting.swift
+@@ -27,6 +27,10 @@
+ 
+         // Plain code text first; token colors paint over it.
+         result.addAttribute(.foregroundColor, value: codeColor(nil), range: contentRange)
++        let font = result.attribute(.font, at: contentRange.location, effectiveRange: nil) as? NSFont ?? theme.monospaceFont()
++        if let attributes = codeSyntaxAttributes?(nil, prefersDarkCodeTheme, font) {
++            result.addAttributes(attributes, range: contentRange)
++        }
+ 
+         let code = (result.string as NSString).substring(with: contentRange)
+         for token in CodeHighlighter.tokenize(code, language: language) {
+@@ -34,6 +38,9 @@
+                               length: token.range.length)
+             guard abs.upperBound <= result.length else { continue }
+             result.addAttribute(.foregroundColor, value: codeColor(token.type), range: abs)
++            if let attributes = codeSyntaxAttributes?(String(describing: token.type), prefersDarkCodeTheme, font) {
++                result.addAttributes(attributes, range: abs)
++            }
+         }
+     }
+ }
+--- a/Sources/EdmundCore/Rendering/EditorTextView+ImageRendering.swift
++++ b/Sources/EdmundCore/Rendering/EditorTextView+ImageRendering.swift
+@@ -1,4 +1,5 @@
+ import AppKit
++import ImageIO
+ 
+ // MARK: - Image Rendering
+ //
+@@ -19,8 +20,8 @@
+ // loads: App Transport Security refuses the insecure connection outright,
+ // regardless of the setting (same reasoning as Read mode's DocumentHTML).
+ 
+-// Loaded images are cached by resolved absolute path (local) or URL string
+-// (remote), so a recompose doesn't re-read/re-fetch them. A plain dictionary,
++// Downloaded/data images are retained by URL/digest so recomposition does not
++// re-fetch remote badges. Local previews use the bounded cache below. A dictionary,
+ // not NSCache: NSCache is free to evict entries at any time for its own
+ // heuristics, not just under memory pressure, which broke this cache's "never
+ // re-fetch" promise — a remote badge that had already loaded would silently
+@@ -29,6 +30,45 @@
+ // badges). Mutated only on the main actor, same as `inFlightRemoteImages`/
+ // `undecodableRemoteImages` below.
+ nonisolated(unsafe) private var imageCache: [String: NSImage] = [:]
++
++// Local previews may be re-read after eviction, unlike downloaded badges.
++// One current resolution per file, bounded by decoded bitmap cost and count.
++@MainActor private enum LocalImagePreviews {
++    struct Signature: Equatable {
++        let bytes: UInt64
++        let modified: Date?
++        let inode: UInt64
++        init(_ attributes: [FileAttributeKey: Any]) {
++            bytes = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
++            modified = attributes[.modificationDate] as? Date
++            inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
++        }
++    }
++    struct Entry {
++        let signature: Signature
++        let image: NSImage
++        let pixels: Int
++        let originalPixels: Int
++        let cost: Int
++        var access: UInt64
++    }
++    static var entries: [Data: Entry] = [:]
++    static var cost = 0
++    static var clock: UInt64 = 0
++    static let limit = 64 * 1024 * 1024
++    static func remove(_ key: Data) {
++        if let old = entries.removeValue(forKey: key) { cost -= old.cost }
++    }
++    static func insert(_ entry: Entry, for key: Data) {
++        remove(key)
++        guard entry.cost <= limit else { return }
++        while cost + entry.cost > limit || entries.count >= 64 {
++            guard let oldest = entries.min(by: { $0.value.access < $1.value.access }) else { break }
++            remove(oldest.key)
++        }
++        entries[key] = entry; cost += entry.cost
++    }
++}
+ 
+ // Remote URLs currently being fetched, so a burst of re-styles (scrolling,
+ // cursor moves near the image) doesn't kick off duplicate downloads. Mutated
+@@ -103,7 +143,7 @@
+ 
+     /// Resolves and (for local files) loads the image referenced by
+     /// `destination`, classifying why it can't be shown when it can't.
+-    func imageDisplay(destination: String) -> ImageDisplay {
++    func imageDisplay(destination: String, width: Int? = nil, height: Int? = nil) -> ImageDisplay {
+         let dest = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard !dest.isEmpty else { return .blocked(.notFound) }
+ 
+@@ -119,19 +159,62 @@
+             return loadDataURI(dest)
+         }
+         guard let url = resolveImageURL(dest) else { return .blocked(.notFound) }
+-        let key = url.path
+-        if let cached = imageCache[key] { return .image(cached) }
+-        // Before the existence check: under the sandbox `fileExists` answers
+-        // true for an ungranted file while the read is denied, which would
+-        // misreport it as "Not an image".
++        // Check access even for cache hits; a prior grant may have changed.
+         guard FolderAccess.covers(url) else { return .blocked(.needsFolderAccess) }
+-        // `resolveImageURL` builds a URL from the path string alone (it doesn't
+-        // check existence), so a missing file and an undecodable one both fail
+-        // `NSImage(contentsOf:)` the same way — check existence first so the two
+-        // get distinct, accurate messages.
+-        guard FileManager.default.fileExists(atPath: url.path) else { return .blocked(.notFound) }
+-        guard let image = NSImage(contentsOf: url) else { return .blocked(.notAnImage) }
+-        imageCache[key] = image
++        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
++            return .blocked(.notFound)
++        }
++        let signature = LocalImagePreviews.Signature(attributes)
++        // Data preserves distinct UTF8 file names, including NFC/NFD spellings.
++        let key = Data(url.path.utf8)
++        LocalImagePreviews.clock &+= 1
++        func requestedPixels(_ natural: NSSize, original: Int) -> Int {
++            let display = imageDisplaySize(natural: natural, width: width, height: height)
++            let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
++            let desired = max(display.width, display.height) * scale
++            guard desired.isFinite, desired > 0 else { return 1 }
++            // Small resize changes reuse a pixel bucket; never upscale the file.
++            return Int(min(CGFloat(original), max(1, ceil(desired / 64) * 64)))
++        }
++        if var cached = LocalImagePreviews.entries[key], cached.signature == signature {
++            let needed = requestedPixels(cached.image.size, original: cached.originalPixels)
++            if cached.pixels == 0 || (cached.pixels >= needed && cached.pixels <= max(64, needed * 2)) {
++                cached.access = LocalImagePreviews.clock; LocalImagePreviews.entries[key] = cached
++                return .image(cached.image)
++            }
++        }
++        LocalImagePreviews.remove(key)
++        // NSImage supplies the existing logical size (including DPI) and the
++        // vector/animated fallback. Static raster pixels are decoded separately
++        // by ImageIO at their display resolution, never by full-size drawing.
++        guard let original = NSImage(contentsOf: url), original.size.width > 0, original.size.height > 0,
++              original.size.width.isFinite, original.size.height.isFinite else { return .blocked(.notAnImage) }
++        var image = original
++        var pixels = 0, originalPixels = 0, cost = 0
++        if let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
++           CGImageSourceGetCount(source) == 1,
++           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
++           let w = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
++           let h = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue, w > 0, h > 0 {
++            originalPixels = max(w, h)
++            pixels = requestedPixels(original.size, original: originalPixels)
++            let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
++                kCGImageSourceCreateThumbnailWithTransform: true,
++                kCGImageSourceThumbnailMaxPixelSize: pixels, kCGImageSourceShouldCacheImmediately: true]
++            guard let bitmap = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
++                return .blocked(.notAnImage)
++            }
++            image = NSImage(cgImage: bitmap, size: original.size)
++            image.cacheMode = .never
++            cost = bitmap.bytesPerRow * bitmap.height
++        } else {
++            // Preserve SVG/PDF and animated representations. The count bound
++            // still applies; estimate their bitmap cost without rasterizing.
++            let estimate = original.size.width * original.size.height * 4
++            cost = Int(min(CGFloat(LocalImagePreviews.limit), max(1, estimate)))
++        }
++        LocalImagePreviews.insert(.init(signature: signature, image: image, pixels: pixels,
++            originalPixels: originalPixels, cost: cost, access: LocalImagePreviews.clock), for: key)
+         return .image(image)
+     }
+ 
+@@ -232,7 +315,7 @@
+     /// nil means the body size.
+     func imageOverlay(destination: String, width: Int? = nil, height: Int? = nil,
+                       fontSize: CGFloat? = nil) -> FragmentOverlay? {
+-        switch imageDisplay(destination: destination) {
++        switch imageDisplay(destination: destination, width: width, height: height) {
+         case .image(let image):
+             return scaledOverlay(image: image, width: width, height: height)
+         case .blocked(let failure):
+@@ -248,24 +331,25 @@
+     /// `height` override the natural size first (one alone scales the other
+     /// proportionally); the max-width clamp still applies after.
+     private func scaledOverlay(image: NSImage, width: Int? = nil, height: Int? = nil) -> FragmentOverlay? {
+-        var size = image.size
++        let size = imageDisplaySize(natural: image.size, width: width, height: height)
+         guard size.width > 0, size.height > 0 else { return nil }
+-
++        return FragmentOverlay(image: image, bounds: CGRect(origin: .zero, size: size))
++    }
++
++    private func imageDisplaySize(natural: NSSize, width: Int?, height: Int?) -> NSSize {
++        var size = natural
++        guard size.width > 0, size.height > 0 else { return .zero }
+         switch (width, height) {
+         case let (w?, h?): size = NSSize(width: CGFloat(w), height: CGFloat(h))
+-        case let (w?, nil): size = NSSize(width: CGFloat(w),
+-                                          height: size.height * CGFloat(w) / size.width)
+-        case let (nil, h?): size = NSSize(width: size.width * CGFloat(h) / size.height,
+-                                          height: CGFloat(h))
++        case let (w?, nil): size = NSSize(width: CGFloat(w), height: size.height * CGFloat(w) / size.width)
++        case let (nil, h?): size = NSSize(width: size.width * CGFloat(h) / size.height, height: CGFloat(h))
+         case (nil, nil): break
+         }
+-
+         let maxWidth = availableContentWidth
+         if maxWidth > 0, size.width > maxWidth {
+             size = NSSize(width: maxWidth, height: size.height * (maxWidth / size.width))
+         }
+-        return FragmentOverlay(image: image,
+-                               bounds: CGRect(x: 0, y: 0, width: size.width, height: size.height))
++        return size
+     }
+ 
+     /// Draws "icon  reason" into one image (same technique as the callout
+--- a/Sources/EdmundCore/Rendering/EditorTextView+Rendering.swift
++++ b/Sources/EdmundCore/Rendering/EditorTextView+Rendering.swift
+@@ -290,7 +290,8 @@
+                           hideComments: Bool = false,
+                           listDepth: Int? = nil,
+                           continuationDepth: Int? = nil) -> NSAttributedString {
+-        let result = NSMutableAttributedString(string: markdown, attributes: baseAttributes)
++        let blank = markdown.allSatisfy { $0 == "\n" || $0 == "\r" }
++        let result = NSMutableAttributedString(string: markdown, attributes: blank ? blankLineAttributes : baseAttributes)
+         guard !markdown.isEmpty else { return result }
+ 
+         // The font already applied at `loc` — the enclosing heading's when
+@@ -1069,6 +1070,43 @@
+         ])
+     }
+ 
++    var presentationEnvironmentKey: String {
++        // The complete theme protects spacing, cascades and other settings not
++        // used by the older table/callout cache's narrower environment key.
++        stylingEnvironmentKey + "|" + String(reflecting: theme) + "|" + codeSyntaxPresentationKey
++    }
++    private func presentationKey(for block: Block, cursor: Int?, depth: Int?, continuation: Int?) -> BlockPresentationKey? {
++        guard viewMode == .edit, cursor == nil else { return nil }
++        switch block.kind {
++        case .paragraph, .heading:
++            guard !block.content.contains("["), !block.content.contains("<"),
++                  !block.content.contains("$"), !block.content.contains("://") else { return nil }
++        case .fence:
++            let opening = block.content.prefix { !$0.isNewline }
++                .drop { $0.isWhitespace || $0 == "`" || $0 == "~" }
++            let language = opening.split(whereSeparator: { $0.isWhitespace || $0 == "," }).first?
++                .trimmingCharacters(in: CharacterSet(charactersIn: "{}" )).lowercased()
++            guard language == "r" else { return nil }
++        default: return nil
++        }
++        return BlockPresentationKey(source: Data(block.content.utf8),
++            environment: blockPresentationEnvironment ?? presentationEnvironmentKey,
++            depth: depth, continuation: continuation)
++    }
++    private func cachePresentation(_ value: NSAttributedString, for key: BlockPresentationKey) {
++        let cost = key.source.count + value.length * 8 + 256
++        let limit = 8 * 1024 * 1024
++        guard cost <= limit else { return }
++        if let previous = blockPresentations.removeValue(forKey: key) { blockPresentationCost -= previous.cost }
++        while blockPresentationCost + cost > limit || blockPresentations.count >= 4096 {
++            guard let oldest = blockPresentations.min(by: { $0.value.access < $1.value.access }) else { break }
++            blockPresentationCost -= oldest.value.cost; blockPresentations.removeValue(forKey: oldest.key)
++        }
++        blockPresentations[key] = CachedBlockPresentation(value: NSAttributedString(attributedString: value),
++            cost: cost, access: blockPresentationClock)
++        blockPresentationCost += cost
++    }
++
+     /// Plain monospaced styling for source mode: the raw markdown with no
+     /// markup interpretation (no hidden delimiters, overlays, or decorations).
+     var sourceAttributes: [NSAttributedString.Key: Any] {
+@@ -1120,15 +1158,20 @@
+             scheduleFullLayoutSettle()
+         }
+ 
++        let depth = listDepth(ofBlock: blockIndex)
++        let continued = listContinuationDepth(ofBlock: blockIndex)
++        let key = cachedSpans == nil ? presentationKey(for: block, cursor: cursorInBlock, depth: depth, continuation: continued) : nil
++        blockPresentationClock &+= 1
+         let styled: NSAttributedString
+-        if case .frontMatter = block.kind, viewMode != .source {
++        if let key, var cached = blockPresentations[key] {
++            cached.access = blockPresentationClock; blockPresentations[key] = cached
++            styled = cached.value
++        } else if case .frontMatter = block.kind, viewMode != .source {
+             // YAML front matter: flat dim monospace. Never run YAML through the
+             // markdown span parser — a `- x` line would list-style and `#x`
+             // would tag-style. (Source mode still shows plain raw mono below.)
+             styled = styleFrontMatter(block.content)
+         } else {
+-            let depth = listDepth(ofBlock: blockIndex)
+-            let continued = listContinuationDepth(ofBlock: blockIndex)
+             switch viewMode {
+             case .edit:
+                 if let cachedSpans {
+@@ -1142,6 +1185,7 @@
+             case .source:  styled = sourceStyled(block.content)
+             }
+         }
++        if let key, blockPresentations[key] == nil { cachePresentation(styled, for: key) }
+         let offset = block.range.location
+ 
+         styled.enumerateAttributes(in: NSRange(location: 0, length: styled.length), options: []) { attrs, range, _ in
+@@ -1157,12 +1201,14 @@
+         // so the in-place path must too.
+         if offset > 0,
+            ts.attributedSubstring(from: NSRange(location: offset - 1, length: 1)).string == "\n" {
+-            ts.setAttributes(baseAttributes, range: NSRange(location: offset - 1, length: 1))
++            let blank = offset == 1 || (ts.string as NSString).character(at: offset - 2) == 10
++            ts.setAttributes(blank ? blankLineAttributes : baseAttributes, range: NSRange(location: offset - 1, length: 1))
+         }
+         let after = block.range.upperBound
+         if after < ts.length,
+            ts.attributedSubstring(from: NSRange(location: after, length: 1)).string == "\n" {
+-            ts.setAttributes(baseAttributes, range: NSRange(location: after, length: 1))
++            let blank = after == 0 || (ts.string as NSString).character(at: after - 1) == 10
++            ts.setAttributes(blank ? blankLineAttributes : baseAttributes, range: NSRange(location: after, length: 1))
+         }
+     }
+ 
+--- a/Sources/EdmundCore/TextView/DecoratedTextLayoutFragment.swift
++++ b/Sources/EdmundCore/TextView/DecoratedTextLayoutFragment.swift
+@@ -5,6 +5,8 @@
+ final class DecoratedTextLayoutFragment: NSTextLayoutFragment {
+ 
+     /// Decorations drawn behind the paragraph, outermost first.
++    private let supplementaryHeight: CGFloat
++    override var bottomMargin: CGFloat { super.bottomMargin + supplementaryHeight }
+     let decorations: [BlockDecoration]
+     /// Paragraph-relative anchor offsets and their overlays.
+     let overlays: [(offset: Int, overlay: FragmentOverlay)]
+@@ -52,7 +54,8 @@
+          codeBlockLabelFont: NSFont = .monospacedSystemFont(ofSize: 10, weight: .regular),
+          invisibles: InvisiblesConfig? = nil,
+          listGuides: [CGFloat] = [],
+-         owner: EditorTextView? = nil) {
++         owner: EditorTextView? = nil, supplementaryHeight: CGFloat = 0) {
++        self.supplementaryHeight = supplementaryHeight
+         self.listGuides = listGuides
+         self.owner = owner
+         self.decorations = decorations
+@@ -350,6 +353,33 @@
+         return bounds
+     }
+ 
++    /// Paint after native block backgrounds and before the original glyphs.
++    /// Snapshot only the editor's Sendable match state across actor isolation;
++    /// the fragment and its CGContext stay in their native drawing context.
++    private func drawFindMatches(at point: CGPoint, in context: CGContext) {
++        guard let owner, let manager = textLayoutManager else { return }
++        let (matches, current) = MainActor.assumeIsolated {
++            (owner.findActive ? owner.findMatches : [], owner.currentMatchIndex)
++        }
++        guard !matches.isEmpty else { return }
++        let start = manager.offset(from: manager.documentRange.location, to: rangeInElement.location)
++        let end = manager.offset(from: manager.documentRange.location, to: rangeInElement.endLocation)
++        let paragraph = NSRange(location: start, length: max(0, end - start))
++        for (index, match) in matches.enumerated() {
++            let intersection = NSIntersectionRange(paragraph, match)
++            guard intersection.length > 0,
++                  let start = manager.location(manager.documentRange.location, offsetBy: intersection.location),
++                  let end = manager.location(start, offsetBy: intersection.length),
++                  let range = NSTextRange(location: start, end: end) else { continue }
++            context.setFillColor(NSColor.findHighlightColor.withAlphaComponent(index == current ? 0.65 : 0.28).cgColor)
++            manager.enumerateTextSegments(in: range, type: .highlight, options: []) { _, frame, _, _ in
++                context.fill(frame.offsetBy(dx: point.x - self.layoutFragmentFrame.minX,
++                                            dy: point.y - self.layoutFragmentFrame.minY))
++                return true
++            }
++        }
++    }
++
+     override func draw(at point: CGPoint, in context: CGContext) {
+         // Focus mode fades this whole fragment — text, boxes, bars, overlays —
+         // as one group. See EditorTextView+FocusMode.
+@@ -374,6 +404,7 @@
+         context.restoreGState()
+         context.saveGState()
+         context.setShouldAntialias(antialias)
++        drawFindMatches(at: point, in: context)
+         super.draw(at: point, in: context)
+         context.restoreGState()
+         for (offset, overlay) in overlays {
+--- a/Sources/EdmundCore/TextView/EditorTextView+CodeCopyButton.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+CodeCopyButton.swift
+@@ -202,6 +202,7 @@
+         copiedGlyphView = nil
+         copiedCodeBlock = nil
+         copiedCodeProgress = 0
++        window?.invalidateCursorRects(for: self)
+         needsDisplay = true
+     }
+ 
+@@ -234,6 +235,7 @@
+         hoveredCodeBlock = block
+         codeCopyButtonHovered = onButton
+         refreshHoverButtonToolTips()
++        window?.invalidateCursorRects(for: self)
+         needsDisplay = true
+     }
+ 
+--- a/Sources/EdmundCore/TextView/EditorTextView+Composition.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+Composition.swift
+@@ -100,8 +100,15 @@
+         // Small sets — every normal interaction — are styled in full, so
+         // user-visible state transitions are never deferred. Without a
+         // scroll view (headless), everything is synchronous.
+-        var syncSet = dirty
+-        if dirty.count > 8, let bounds = syncStylingBlockRange() {
++        // The host's Code presentation is uniform text, not rendered blocks.
++        // Flatten it in one transaction: no per-block parsing/list work or
++        // deferred offscreen drain is needed to reveal the complete source.
++        let flatSource = viewMode == .source && sourcePresentationAttributes != nil && dirty.count > 8
++        let previousEnvironment = blockPresentationEnvironment
++        if viewMode == .edit { blockPresentationEnvironment = presentationEnvironmentKey }
++        defer { blockPresentationEnvironment = previousEnvironment }
++        var syncSet = flatSource ? IndexSet(blocks.indices) : dirty
++        if !flatSource, dirty.count > 8, let bounds = syncStylingBlockRange() {
+             syncSet = dirty.filteredIndexSet { bounds.contains($0) }
+             if let active = newActiveIndex, dirty.contains(active) {
+                 syncSet.insert(active)
+@@ -110,11 +117,16 @@
+         let deferred = dirty.subtracting(syncSet)
+ 
+         ts.beginEditing()
+-        for idx in syncSet where idx < blocks.count {
+-            let cursorInBlock: Int? = (idx == newActiveIndex)
+-                ? max(0, cursorInRaw - blocks[idx].range.location) : nil
+-            restyleBlock(idx, cursorInBlock: cursorInBlock)
+-            setStyled(idx, true)
++        if flatSource {
++            ts.setAttributes(sourceAttributes, range: NSRange(location: 0, length: ts.length))
++            for idx in blocks.indices { setStyled(idx, true) }
++        } else {
++            for idx in syncSet where idx < blocks.count {
++                let cursorInBlock: Int? = (idx == newActiveIndex)
++                    ? max(0, cursorInRaw - blocks[idx].range.location) : nil
++                restyleBlock(idx, cursorInBlock: cursorInBlock)
++                setStyled(idx, true)
++            }
+         }
+         ts.endEditing()
+ 
+@@ -125,7 +137,8 @@
+         // an attribute-only change. Force the restyled blocks to re-lay-out so
+         // the new indent shows immediately instead of after the next cursor move.
+         if let tlm = textLayoutManager {
+-            for idx in syncSet where idx < blocks.count {
++            if flatSource { tlm.invalidateLayout(for: tlm.documentRange) }
++            for idx in syncSet where !flatSource && idx < blocks.count {
+                 if let range = blockTextRange(blocks[idx].range, tlm) {
+                     tlm.invalidateLayout(for: range)
+                 }
+@@ -207,6 +220,7 @@
+                 for i in blocks.indices { setStyled(i, false) }
+                 recomposeDirty(IndexSet(blocks.indices),
+                                cursorInRaw: currentCursorInRaw(),
++                               selectionInRaw: selectedRange(),
+                                settingSelection: true)
+             }
+         }
+--- a/Sources/EdmundCore/TextView/EditorTextView+EditFlow.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+EditFlow.swift
+@@ -33,6 +33,15 @@
+                 if (attrs[.foregroundColor] as? NSColor) == .clear {
+                     attrs[.foregroundColor] = foregroundColor
+                 }
++            }
++            // The extra insertion line otherwise includes paragraph leading in
++            // its caret, whereas a populated line uses the glyph font metrics.
++            let selection = selectedRange(), text = string as NSString
++            if viewMode == .edit, selection.length == 0, selection.location <= text.length,
++               text.substring(with: text.paragraphRange(for: selection)).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
++                let style = ((attrs[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
++                style.lineSpacing = 0; style.paragraphSpacing = 0; style.paragraphSpacingBefore = 0
++                attrs[.paragraphStyle] = style
+             }
+             super.typingAttributes = attrs
+         }
+@@ -74,6 +83,7 @@
+             }
+         }
+         traceEdit("shouldChangeText OK range=\(affectedCharRange) repl=\(logSnippet(replacementString))")
++        captureEditViewportAnchor(range: affectedCharRange, replacement: replacementString)
+         scheduleBypassedEditSyncCheck()
+         return true
+     }
+@@ -166,6 +176,12 @@
+            active < blocks.count, blocks[active].kind == .fence {
+             ensureCaretRegionLaidOut()
+         }
++        if editViewportAnchor != nil {
++            editViewportAnchorSource = rawSource
++            editViewportAnchorSelection = selectedRange()
++            editViewportAnchorReady = true; needsLayout = true
++        }
++        viewportDelegate?.editorDidEdit()
+         noteTableEdit()
+         document?.updateChangeCount(.changeDone)
+         scrollCursorToCenter()
+--- a/Sources/EdmundCore/TextView/EditorTextView+Find.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+Find.swift
+@@ -104,9 +104,9 @@
+         // centering). Translate to draw in view coordinates.
+         let origin = textContainerOrigin
+ 
+-        // Grey resting background for every visible match.
+-        NSColor.unemphasizedSelectedTextBackgroundColor.setFill()
+-        for match in findMatches {
++        // Persistent match-only highlights; the active result is stronger.
++        for (index, match) in findMatches.enumerated() {
++            NSColor.findHighlightColor.withAlphaComponent(index == currentMatchIndex ? 0.65 : 0.28).setFill()
+             if let visible, NSIntersectionRange(visible, match).length == 0 { continue }
+             guard let tr = blockTextRange(match, tlm) else { continue }
+             tlm.enumerateTextSegments(in: tr, type: .highlight, options: []) { _, frame, _, _ in
+--- a/Sources/EdmundCore/TextView/EditorTextView+LazyStyling.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+LazyStyling.swift
+@@ -69,6 +69,9 @@
+         // leaving an empty band on screen. `recomposeDirty` invalidates its
+         // synchronously-styled blocks for the same reason.
+         var restyled = IndexSet()
++        let previousEnvironment = blockPresentationEnvironment
++        if viewMode == .edit { blockPresentationEnvironment = presentationEnvironmentKey }
++        defer { blockPresentationEnvironment = previousEnvironment }
+         let cursor = selectedRange().location
+         isUpdating = true
+         // Anchored, edits included: restyled blocks above the viewport change
+@@ -111,6 +114,7 @@
+         let end = ContinuousClock.now
+         lastStylingSliceDuration = end - start
+         stylingSliceCompletionEstimate = end - processingEnd
++        viewportLayoutDidComplete?()
+     }
+ 
+     /// TextKit 2 only gives a fragment a real frame once it's laid out;
+@@ -307,6 +311,7 @@
+     }
+ 
+     @objc private func userScrollDidStart(_ note: Notification) {
++        editViewportAnchor = nil
+         userScrollInProgress = true
+         isScrollingActive = true
+         scrollQuiescenceTimer?.invalidate()
+--- a/Sources/EdmundCore/TextView/EditorTextView+LineNumbers.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+LineNumbers.swift
+@@ -194,7 +194,19 @@
+     /// the picture above it), since only caret moves repainted them.
+     public override func layout() {
+         super.layout()
++        if #unavailable(macOS 27.0) { restoreEditViewportAnchor() }
+         invalidateLineNumbers()
++    }
++
++    public override func textViewportLayoutControllerWillLayout(_ controller: NSTextViewportLayoutController) {
++        nativeViewportLayoutDepth += 1
++        super.textViewportLayoutControllerWillLayout(controller)
++    }
++    public override func textViewportLayoutControllerDidLayout(_ controller: NSTextViewportLayoutController) {
++        super.textViewportLayoutControllerDidLayout(controller)
++        if editViewportAnchorReady { restoreEditViewportAnchor() }
++        nativeViewportLayoutDepth = max(0, nativeViewportLayoutDepth - 1)
++        viewportLayoutDidComplete?()
+     }
+ 
+     /// Repaints the numbers after the caret may have changed line. Only the
+@@ -305,6 +317,10 @@
+ 
+         tlm.enumerateTextLayoutFragments(from: viewport.location,
+                                          options: []) { fragment in
++            // Bound by source locations too: unlaid fragments have zero frames
++            // and a geometry-only stop can vend the whole remaining document.
++            guard fragment.rangeInElement.location.compare(viewport.endLocation) != .orderedDescending else { return false }
++            guard fragment.state == .layoutAvailable else { return true }
+             let frame = fragment.layoutFragmentFrame
+             guard frame.minY <= bottom else { return false }
+             guard let firstLine = fragment.textLineFragments.first else { return true }
+--- a/Sources/EdmundCore/TextView/EditorTextView+TableRawButton.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+TableRawButton.swift
+@@ -341,18 +341,23 @@
+         updateTableHover(at: point, chrome: chrome)
+         updateTableHandleHover(at: point, chrome: chrome)
+         updateCodeCopyHover(at: point, chrome: chrome)
++        if codeCopyButtonHovered { NSCursor.arrow.set() }
+     }
+ 
+     public override func cursorUpdate(with event: NSEvent) {
+         if let cursor = embeddedViewCursor?(convert(event.locationInWindow, from: nil)) {
+             cursor.set()
++        } else if codeCopyButtonHit(at: event) != nil {
++            NSCursor.arrow.set()
+         } else {
+             super.cursorUpdate(with: event)
+         }
+     }
+ 
+     public override func resetCursorRects() {
+-        guard let excluded = embeddedViewRects?(), !excluded.isEmpty else {
++        let copyRects = revealedCodeCopyButtons().map { codeCopyButtonHitBox($0.rect) }
++        let excluded = (embeddedViewRects?() ?? []) + copyRects
++        guard !excluded.isEmpty else {
+             super.resetCursorRects()
+             return
+         }
+@@ -371,6 +376,10 @@
+             }
+         }
+         for region in regions { addCursorRect(region, cursor: .iBeam) }
++        for rect in copyRects {
++            let visible = rect.intersection(visibleRect)
++            if !visible.isEmpty { addCursorRect(visible, cursor: .arrow) }
++        }
+     }
+ 
+     public override func mouseExited(with event: NSEvent) {
+@@ -385,12 +394,14 @@
+         guard hoveredTableBlock != nil || tableRawButtonHovered
+                 || hoveredTableHandle != nil
+                 || hoveredCodeBlock != nil || codeCopyButtonHovered else { return }
++        let hadCodeCopy = hoveredCodeBlock != nil || codeCopyButtonHovered
+         hoveredTableBlock = nil
+         tableRawButtonHovered = false
+         hoveredTableHandle = nil
+         hoveredCodeBlock = nil
+         codeCopyButtonHovered = false
+         refreshHoverButtonToolTips()
++        if hadCodeCopy { window?.invalidateCursorRects(for: self) }
+         needsDisplay = true
+     }
+ 
+--- a/Sources/EdmundCore/TextView/EditorTextView+TextKit2.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+TextKit2.swift
+@@ -46,6 +46,10 @@
+             return NSTextLayoutFragment(textElement: textElement,
+                                         range: textElement.elementRange)
+         }
++        let paragraphOffset = textLayoutManager.textContentManager.map {
++            $0.offset(from: $0.documentRange.location, to: textElement.elementRange!.location)
++        } ?? -1
++        let supplementaryHeight = paragraphSupplementaryHeights[paragraphOffset] ?? 0
+         let str = paragraph.attributedString
+         let decoValue = str.attribute(.blockDecoration, at: 0, effectiveRange: nil)
+         let decorations: [BlockDecoration]
+@@ -88,7 +92,7 @@
+         // turning the mode *off* takes effect on the next redraw.
+         let focusMode = self.focusMode
+         guard !decorations.isEmpty || !overlays.isEmpty || !cellWraps.isEmpty || !textAntialias
+-                || (invisibles?.drawsAnything ?? false) || !listGuides.isEmpty || focusMode
++                || (invisibles?.drawsAnything ?? false) || !listGuides.isEmpty || focusMode || supplementaryHeight > 0
+         else {
+             return NSTextLayoutFragment(textElement: textElement,
+                                         range: textElement.elementRange)
+@@ -104,7 +108,7 @@
+                                            codeBlockLabelFont: codeBlockLabelFont,
+                                            invisibles: invisibles,
+                                            listGuides: listGuides,
+-                                           owner: self)
++                                           owner: self, supplementaryHeight: supplementaryHeight)
+     }
+ }
+ 
+--- a/Sources/EdmundCore/TextView/EditorTextView+TypewriterScroll.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+TypewriterScroll.swift
+@@ -5,6 +5,89 @@
+ /// avoids AppKit's TextKit 2 scroll-to-range (which kills the process on large
+ /// documents). The `typewriterModeEnabled` stored flag lives on the main class.
+ extension EditorTextView {
++    public var isPreservingEditViewport: Bool {
++        viewportDelegate?.isPreservingViewport ?? (editViewportAnchorReady && editViewportAnchor != nil
++            && editViewportAnchorSelection == selectedRange()
++            && editViewportAnchorSource?.utf8.elementsEqual(rawSource.utf8) == true)
++    }
++    /// Remember an unchanged visible line before native text editing invalidates
++    /// the fence's row fragments. Sampling after the edit sees estimated row
++    /// heights and cannot recover the position the reader was looking at.
++    func captureEditViewportAnchor(range: NSRange, replacement: String?) {
++        editViewportAnchor = nil
++        editViewportAnchorReady = false
++        if let viewportDelegate { viewportDelegate.editorWillEdit(range: range, replacement: replacement); return }
++        guard viewMode == .edit, !typewriterModeEnabled, !isUndoRedoing,
++              !hasMarkedText(), let replacement, let scroll = enclosingScrollView,
++              let caret = lineRect(forCharacterAt: selectedRange().location) else { return }
++        // Multiline/large replacements can intentionally move the new caret
++        // outside the old viewport. Leave their native caret revelation free.
++        guard replacement.utf16.count <= 256, range.length <= 256,
++              replacement.filter({ $0 == "\n" }).count <= 1 else { return }
++        let ns = rawSource as NSString
++        var offset = ns.lineRange(for: NSRange(location: min(range.location, ns.length), length: 0)).location
++        // At a line start, pin the preceding line. A Return should still move
++        // the split line down by one row rather than scrolling it back up.
++        if offset == range.location {
++            guard offset > 0 else { return }
++            offset = ns.lineRange(for: NSRange(location: offset - 1, length: 0)).location
++        }
++        guard let line = lineRect(forCharacterAt: offset) else { return }
++        let visible = scroll.contentView.bounds
++        let caretY = caret.minY + textContainerOrigin.y
++        // At a viewport edge native caret revelation must still be allowed.
++        guard caretY >= visible.minY + viewportTopInset,
++              caretY + caret.height * 2 < visible.maxY else { return }
++        let mapped: Int
++        if offset < range.location { mapped = offset }
++        else if offset >= range.upperBound {
++            mapped = offset + replacement.utf16.count - range.length
++        } else { return } // The anchor itself is being replaced.
++        editViewportAnchor = EditViewportAnchor(offset: mapped, lineY: line.minY, origin: visible.origin)
++    }
++
++    func restoreEditViewportAnchor() {
++        guard editViewportAnchorReady, !restoringEditViewportAnchor,
++              !isUpdating, !isUndoRedoing, !hasMarkedText(), let anchor = editViewportAnchor,
++              let scroll = enclosingScrollView else { return }
++        guard editViewportAnchorSelection == selectedRange(),
++              editViewportAnchorSource?.utf8.elementsEqual(rawSource.utf8) == true else {
++            editViewportAnchor = nil; return
++        }
++        restoringEditViewportAnchor = true
++        defer { restoringEditViewportAnchor = false }
++        guard let line = lineRect(forCharacterAt: anchor.offset) else { return }
++        let y = max(-viewportTopInset, anchor.origin.y + line.minY - anchor.lineY)
++        scroll.contentView.scroll(to: CGPoint(x: anchor.origin.x, y: y))
++        scroll.reflectScrolledClipView(scroll.contentView)
++    }
++
++    public override func scrollWheel(with event: NSEvent) {
++        explicitNavigationWillBegin?()
++        editViewportAnchor = nil
++        super.scrollWheel(with: event)
++    }
++
++    public override func scrollPageDown(_ sender: Any?) {
++        explicitNavigationWillBegin?()
++        editViewportAnchor = nil
++        super.scrollPageDown(sender)
++    }
++    public override func scrollPageUp(_ sender: Any?) {
++        explicitNavigationWillBegin?()
++        editViewportAnchor = nil
++        super.scrollPageUp(sender)
++    }
++    public override func scrollToBeginningOfDocument(_ sender: Any?) {
++        explicitNavigationWillBegin?()
++        editViewportAnchor = nil
++        super.scrollToBeginningOfDocument(sender)
++    }
++    public override func scrollToEndOfDocument(_ sender: Any?) {
++        explicitNavigationWillBegin?()
++        editViewportAnchor = nil
++        super.scrollToEndOfDocument(sender)
++    }
+ 
+     /// Runs `body` (which restyles the active block, changing its height) while
+     /// pinning the line at the TOP of the viewport to the same screen position
+@@ -20,6 +103,19 @@
+     /// consistent measurement. A mis-measure degrades to no scroll — never a
+     /// yank or a jump to the document start.
+     func preservingViewportAnchor(_ body: () -> Void) {
++        if let viewportDelegate {
++            validateInvalidatedLayout()
++            viewportDelegate.editorWillRestyle()
++            body()
++            validateInvalidatedLayout()
++            viewportDelegate.editorDidRestyle()
++            return
++        }
++        viewportAnchorDepth += 1
++        defer {
++            viewportAnchorDepth -= 1
++            if viewportAnchorDepth == 0 { viewportLayoutDidComplete?() }
++        }
+         guard let scrollView = enclosingScrollView else { body(); return }
+         // Before reading the anchor, not after: an invalid layout would pick and
+         // place it wrongly. Not compensated, since nothing on screen moves.
+@@ -157,6 +253,8 @@
+     /// loop (TextKit 2 height estimates above the target can throw off the
+     /// first scroll).
+     public func scrollCharacterToTop(_ offset: Int, preservingHorizontalPosition: Bool = false) {
++        explicitNavigationWillBegin?()
++        editViewportAnchor = nil
+         guard let scrollView = enclosingScrollView else { return }
+         // An edge ruler can give the clip a negative X origin. A vertical
+         // overview gesture must preserve it instead of hiding the gutter.
+@@ -343,6 +441,9 @@
+     /// (caret autoscroll), so replace it with the minimal fragment-based
+     /// scroll: lay out just the target's fragment and move the clip view.
+     public override func scrollRangeToVisible(_ range: NSRange) {
++        // A host transaction already guarantees this editing/navigation anchor.
++        // Native interim caret estimates must not scroll before it commits.
++        if let viewportDelegate, viewportDelegate.isPreservingViewport, !viewportDelegate.isApplyingViewport { return }
+         guard let scrollView = enclosingScrollView else { return }
+         // Bound the range by its two ends so an extended selection follows the
+         // end being modified rather than always its start.
+--- a/Sources/EdmundCore/TextView/EditorTextView+Undo.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+Undo.swift
+@@ -17,6 +17,10 @@
+ // state the next entry was recorded against.
+ 
+ extension EditorTextView {
++
++    /// Public state of the source diff history for host menu validation.
++    public var canUndoSource: Bool { !undoStack.isEmpty }
++    public var canRedoSource: Bool { !redoStack.isEmpty }
+ 
+     @objc public func undo(_ sender: Any?) {
+         performUndo()
+--- a/Sources/EdmundCore/TextView/EditorTextView.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView.swift
+@@ -1,4 +1,13 @@
+ import AppKit
++
++@MainActor public protocol EditorViewportDelegate: AnyObject {
++    var isPreservingViewport: Bool { get }
++    var isApplyingViewport: Bool { get }
++    func editorWillEdit(range: NSRange, replacement: String?)
++    func editorDidEdit()
++    func editorWillRestyle()
++    func editorDidRestyle()
++}
+ 
+ /// A single NSTextView with word-level inline preview.
+ ///
+@@ -55,6 +64,13 @@
+     /// host supplies font/paragraph attributes before the native edit layout.
+     /// Nil retains upstream source and typing presentation.
+     public var sourcePresentationAttributes: ((NSFont) -> [NSAttributedString.Key: Any])?
++    public weak var viewportDelegate: (any EditorViewportDelegate)?
++
++
++    /// Host-owned, non-source space after a paragraph. The layout fragment
++    /// reserves it without changing text attributes, selections or clipboard.
++    public var paragraphSupplementaryHeights: [Int: CGFloat] = [:]
++
+ 
+     // MARK: - Find
+ 
+@@ -296,6 +312,16 @@
+     /// ones, so a position read from the model is a position that was never on
+     /// screen. See `validateInvalidatedLayout`.
+     var layoutInvalidatedByRestyle = false
++    struct EditViewportAnchor {
++        let offset: Int
++        let lineY: CGFloat
++        let origin: CGPoint
++    }
++    var editViewportAnchor: EditViewportAnchor?
++    var editViewportAnchorReady = false
++    var editViewportAnchorSource: String?
++    var editViewportAnchorSelection: NSRange?
++    var restoringEditViewportAnchor = false
+     /// Documents at or below this UTF-16 length are laid out in full once
+     /// styling converges, eliminating TextKit 2 height estimates (and the
+     /// scroll jumps they cause). See `scheduleFullLayoutSettle`.
+@@ -361,6 +387,15 @@
+ 
+     /// Optional per-editor application accent. This changes selection drawing,
+     /// never document attributes or syntax colors; nil keeps upstream themes.
++    /// Host presentation anchoring runs after native viewport re-estimation.
++    public var viewportLayoutDidComplete: (() -> Void)?
++    var viewportAnchorDepth = 0
++    var nativeViewportLayoutDepth = 0
++    public var hasDeferredPresentation: Bool { unstyledBlockCount > 0 }
++    public var isAdjustingPresentation: Bool { isUpdating || viewportAnchorDepth > 0 || nativeViewportLayoutDepth > 0 }
++    /// Explicit navigation releases a host's temporary presentation anchor.
++    public var explicitNavigationWillBegin: (() -> Void)?
++
+     public var selectionAccentColor: NSColor? {
+         didSet {
+             applySelectionColors()
+@@ -428,16 +463,37 @@
+     ///   - `source`  — plain monospaced raw markdown, no styling.
+     public enum ViewMode: Sendable { case edit, source }
+ 
++    private var applyingPresentation = false
++
+     public var viewMode: ViewMode = .edit {
+         didSet {
+             guard oldValue != viewMode else { return }
++            editViewportAnchor = nil
+             isEditable = true
+-            guard !blocks.isEmpty else { return }
++            guard !blocks.isEmpty, !applyingPresentation else { return }
+             let dirty = IndexSet(integersIn: 0..<blocks.count)
+             // Re-style under the new mode (viewport-first for big sets).
+             stylingOnly { recomposeDirty(dirty, cursorInRaw: selectedRange().location) }
+         }
+     }
++
++    struct BlockPresentationKey: Hashable {
++        let source: Data
++        let environment: String
++        let depth: Int?
++        let continuation: Int?
++    }
++    struct CachedBlockPresentation {
++        let value: NSAttributedString
++        let cost: Int
++        var access: UInt64
++    }
++    var blockPresentations: [BlockPresentationKey: CachedBlockPresentation] = [:]
++    var blockPresentationCost = 0
++    var blockPresentationClock: UInt64 = 0
++    // Shared only within one synchronous styling transaction/slice. All
++    // environment changes are sampled again for the next batch.
++    var blockPresentationEnvironment: String?
+ 
+     /// User overrides for callout styles, keyed by lowercased type. Lets a
+     /// settings layer customize a built-in type's color / icon / border /
+@@ -472,6 +528,11 @@
+             updateScrollOverscroll()
+         }
+     }
++
++    /// Host syntax preferences affect fenced code only. A separate key keeps
++    /// cached native presentations consistent when these attributes change.
++    public var codeSyntaxPresentationKey = ""
++    public var codeSyntaxAttributes: ((String?, Bool, NSFont) -> [NSAttributedString.Key: Any])?
+ 
+     /// Dedupe flag for `scheduleOverscrollUpdate`.
+     var overscrollUpdateScheduled = false
+@@ -875,9 +936,16 @@
+     /// the current zoom are layered on before it reaches `theme`. Saving
+     /// `newTheme` rather than `theme` is what keeps a theme's font out of the
+     /// General row it would otherwise overwrite.
+-    public func applyTheme(_ newTheme: EditorTheme, persist: Bool = true) {
++    /// A host changing mode and typography together can compose once in the
++    /// final presentation, without first restyling the old mode's blocks.
++    public func applyTheme(_ newTheme: EditorTheme, persist: Bool = true, viewMode mode: ViewMode? = nil) {
+         let antialiasChanged = theme.antialias != newTheme.antialias
+         baseTheme = newTheme
++        if let mode {
++            applyingPresentation = true
++            viewMode = mode
++            applyingPresentation = false
++        }
+         if persist { newTheme.save(to: themeDefaults) }
+         resolveTheme()
+         typingAttributes = baseAttributes
+@@ -926,6 +994,18 @@
+             .foregroundColor: foregroundColor,
+             .paragraphStyle: bodyParagraphStyle,
+         ]
++    }
++
++    var blankLineAttributes: [NSAttributedString.Key: Any] {
++        var attrs = baseAttributes
++        guard viewMode == .edit else { return attrs }
++        let style = bodyParagraphStyle.mutableCopy() as! NSMutableParagraphStyle
++        // Empty paragraphs otherwise include interline leading in the native
++        // insertion indicator. Keep the same row spacing outside the glyph box.
++        style.paragraphSpacing += style.lineSpacing
++        style.lineSpacing = 0
++        attrs[.paragraphStyle] = style
++        return attrs
+     }
+ 
+     var separatorLength: Int { (blockSeparator as NSString).length }
+@@ -1162,6 +1242,7 @@
+     /// that the resulting selection change does not re-center the viewport —
+     /// centering when the user merely clicks somewhere feels glitchy.
+     public override func mouseDown(with event: NSEvent) {
++        editViewportAnchor = nil
+         // Source uses native text hit-testing, including literal table pipes.
+         if viewMode == .source {
+             suppressTypewriterCentering = true
+--- a/Sources/EdmundCore/TextView/DecoratedTextLayoutFragment.swift
++++ b/Sources/EdmundCore/TextView/DecoratedTextLayoutFragment.swift
+@@ -358,24 +358,23 @@ final class DecoratedTextLayoutFragment: NSTextLayoutFragment {
+     /// the fragment and its CGContext stay in their native drawing context.
+     private func drawFindMatches(at point: CGPoint, in context: CGContext) {
+         guard let owner, let manager = textLayoutManager else { return }
+-        let (matches, current) = MainActor.assumeIsolated {
+-            (owner.findActive ? owner.findMatches : [], owner.currentMatchIndex)
++        let (matches, current, color) = MainActor.assumeIsolated {
++            (owner.findActive ? owner.findMatches : [], owner.currentMatchIndex, owner.findHighlightColor)
+         }
+         guard !matches.isEmpty else { return }
+         let start = manager.offset(from: manager.documentRange.location, to: rangeInElement.location)
+         let end = manager.offset(from: manager.documentRange.location, to: rangeInElement.endLocation)
+         let paragraph = NSRange(location: start, length: max(0, end - start))
+         for (index, match) in matches.enumerated() {
+-            let intersection = NSIntersectionRange(paragraph, match)
+-            guard intersection.length > 0,
+-                  let start = manager.location(manager.documentRange.location, offsetBy: intersection.location),
+-                  let end = manager.location(start, offsetBy: intersection.length),
+-                  let range = NSTextRange(location: start, end: end) else { continue }
+-            context.setFillColor(NSColor.findHighlightColor.withAlphaComponent(index == current ? 0.65 : 0.28).cgColor)
+-            manager.enumerateTextSegments(in: range, type: .highlight, options: []) { _, frame, _, _ in
+-                context.fill(frame.offsetBy(dx: point.x - self.layoutFragmentFrame.minX,
+-                                            dy: point.y - self.layoutFragmentFrame.minY))
+-                return true
++            guard NSIntersectionRange(paragraph, match).length > 0 else { continue }
++            context.setFillColor(color.withAlphaComponent(index == current
++                ? FindHighlightGeometry.currentAlpha : FindHighlightGeometry.matchAlpha).cgColor)
++            // Already-laid-out line fragments only: the ordinary editor and
++            // decorated code blocks share the same draw-only geometry, so a
++            // search repaint cannot force layout under an active edit.
++            for rect in FindHighlightGeometry.rects(match: match, fragment: self,
++                elementRange: paragraph, origin: point) {
++                context.fill(rect)
+             }
+         }
+     }
+--- a/Sources/EdmundCore/TextView/EditorTextView+Find.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView+Find.swift
+@@ -99,28 +99,20 @@ extension EditorTextView {
+         guard findActive, !findMatches.isEmpty, let tlm = textLayoutManager else { return }
+ 
+         let visible = viewportCharRange(tlm)
+-        // Layout-fragment frames are in text-container space; the view offsets
+-        // them by textContainerOrigin (which also carries the content-width
+-        // centering). Translate to draw in view coordinates.
+-        let origin = textContainerOrigin
+-
+-        // Persistent match-only highlights; the active result is stronger.
++        // Persistent match-only highlights. Both shades come from the host's
++        // theme accent: other hits are a light tint, the current hit a deeper
++        // one, so several results stay distinguishable without leaving the
++        // accent family.
+         for (index, match) in findMatches.enumerated() {
+-            NSColor.findHighlightColor.withAlphaComponent(index == currentMatchIndex ? 0.65 : 0.28).setFill()
+             if let visible, NSIntersectionRange(visible, match).length == 0 { continue }
+-            guard let tr = blockTextRange(match, tlm) else { continue }
+-            tlm.enumerateTextSegments(in: tr, type: .highlight, options: []) { _, frame, _, _ in
+-                let r = frame.offsetBy(dx: origin.x, dy: origin.y)
+-                if r.intersects(rect) { r.fill() }
+-                return true
+-            }
++            findHighlightColor.withAlphaComponent(index == currentMatchIndex ? FindHighlightGeometry.currentAlpha : FindHighlightGeometry.matchAlpha).setFill()
++            for r in findHighlightRects(match, tlm: tlm) where r.intersects(rect) { r.fill() }
+         }
+ 
+         // Pop box over the emphasised match (Preview-style): springs in from a
+         // larger scale with a bouncy overshoot, holds, then fades out. The box
+         // hugs the match text, so it's naturally variable-length.
+-        guard let em = emphasisRange, emphasisProgress < 1,
+-              let tr = blockTextRange(em, tlm) else { return }
++        guard let em = emphasisRange, emphasisProgress < 1 else { return }
+         let elapsed = emphasisProgress * Self.emphasisDuration
+         let scale = elapsed < Self.emphasisSpring
+             ? Self.startScale + (1 - Self.startScale) * easeOutBack(elapsed / Self.emphasisSpring)
+@@ -135,19 +127,37 @@ extension EditorTextView {
+         shadow.shadowOffset = NSSize(width: 0, height: -1.5)                   // flipped view: downward
+         shadow.shadowBlurRadius = 4
+         shadow.set()
+-        NSColor.findHighlightColor.withAlphaComponent(alpha).setFill()
+-        tlm.enumerateTextSegments(in: tr, type: .highlight, options: []) { _, frame, _, _ in
++        findHighlightColor.withAlphaComponent(FindHighlightGeometry.emphasisAlpha * alpha).setFill()
++        for base in findHighlightRects(em, tlm: tlm) {
+             // Base box hugs the text (2pt padding); scale it about its centre.
+-            let base = frame.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -2, dy: -2)
+-            let box = base.scaled(by: scale)
++            let box = base.insetBy(dx: -2, dy: -2).scaled(by: scale)
+             if box.intersects(rect) {
+                 NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
+             }
+-            return true
+         }
+         NSGraphicsContext.restoreGraphicsState()
+     }
+ 
++    /// Draw-only geometry for one match. Uses only fragments whose layout is
++    /// already available: asking `enumerateTextSegments` for a match can force
++    /// layout of the edited code block during the background pass, which in
++    /// turn changes the viewport's height estimate and shifts the page while
++    /// typing with Find open.
++    private func findHighlightRects(_ match: NSRange, tlm: NSTextLayoutManager) -> [NSRect] {
++        let docStart = tlm.documentRange.location
++        guard let location = tlm.location(docStart, offsetBy: match.location),
++              let fragment = tlm.textLayoutFragment(for: location),
++              fragment.state == .layoutAvailable else { return [] }
++        let elementStart = tlm.offset(from: docStart, to: fragment.rangeInElement.location)
++        let elementEnd = tlm.offset(from: docStart, to: fragment.rangeInElement.endLocation)
++        guard elementEnd >= match.location, elementStart < match.upperBound else { return [] }
++        let origin = NSPoint(x: fragment.layoutFragmentFrame.minX + textContainerOrigin.x,
++                             y: fragment.layoutFragmentFrame.minY + textContainerOrigin.y)
++        return FindHighlightGeometry.rects(match: match, fragment: fragment,
++            elementRange: NSRange(location: elementStart, length: max(0, elementEnd - elementStart)),
++            origin: origin)
++    }
++
+     /// Overshooting ease (0→1, briefly passing 1) — the source of the bounce.
+     private func easeOutBack(_ t: CGFloat) -> CGFloat {
+         let c1: CGFloat = 1.70158, c3 = c1 + 1
+@@ -214,3 +224,39 @@ extension EditorTextView {
+     @objc public func findPrevious(_ sender: Any?)     { findHandler?.editorFindPrevious() }
+     @objc public func hideFindBar(_ sender: Any?)      { findHandler?.editorHideFind() }
+ }
++
++/// Shared, layout-free find-highlight geometry. The rects derive from line
++/// fragments that are already laid out; no method here asks TextKit to lay
++/// out anything, so drawing cannot perturb an in-progress edit viewport.
++enum FindHighlightGeometry {
++    static let matchAlpha: CGFloat = 0.30
++    static let currentAlpha: CGFloat = 0.60
++    static let emphasisAlpha: CGFloat = 0.90
++
++    static func rects(match: NSRange, fragment: NSTextLayoutFragment,
++                      elementRange: NSRange, origin: NSPoint) -> [NSRect] {
++        guard fragment.state == .layoutAvailable,
++              NSIntersectionRange(match, elementRange).length > 0 else { return [] }
++        var result: [NSRect] = []
++        for line in fragment.textLineFragments {
++            let lineRange = NSRange(location: elementRange.location + line.characterRange.location,
++                                    length: line.characterRange.length)
++            let start = max(match.location, lineRange.location)
++            let end = min(match.upperBound, lineRange.upperBound)
++            guard lineRange.length > 0, end > start else { continue }
++            let bounds = line.typographicBounds
++            guard bounds.height > 0 else { continue }
++            let localStart = min(max(0, start - lineRange.location), lineRange.length)
++            let localEnd = min(max(localStart, end - lineRange.location), lineRange.length)
++            let x0 = line.locationForCharacter(at: localStart).x
++            let x1 = localEnd >= lineRange.length
++                ? bounds.width
++                : line.locationForCharacter(at: localEnd).x
++            let rect = NSRect(x: origin.x + bounds.minX + min(x0, x1),
++                              y: origin.y + bounds.minY,
++                              width: abs(x1 - x0), height: bounds.height)
++            if rect.width > 0 { result.append(rect) }
++        }
++        return result
++    }
++}
+--- a/Sources/EdmundCore/TextView/EditorTextView.swift
++++ b/Sources/EdmundCore/TextView/EditorTextView.swift
+@@ -83,8 +83,13 @@ public class EditorTextView: NSTextView {
+     public var currentMatchIndex: Int?
+     /// True while the find bar is open; gates highlight drawing.
+     public var findActive = false
++    /// Base color for find results. The host binds this to the app's theme
++    /// accent; the current result uses a deeper shade of the same color.
++    public var findHighlightColor: NSColor = .findHighlightColor {
++        didSet { if findActive { needsDisplay = true } }
++    }
+     /// The match currently being emphasised (the newly-navigated hit), and how
+-    /// far its yellow→grey settle animation has progressed (0…1). Drives the
++    /// far its accent→grey settle animation has progressed (0…1). Drives the
+     /// CotEditor-style pop; nil when nothing is animating. See EditorTextView+Find.
+     var emphasisRange: NSRange?
+     var emphasisProgress: CGFloat = 0

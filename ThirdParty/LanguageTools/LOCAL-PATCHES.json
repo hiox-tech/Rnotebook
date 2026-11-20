@@ -1,0 +1,12 @@
+{
+  "date": "2026-11-14",
+  "upstreamRevision": "8ac99ed1e7ad319737fc11dde20c07d1e1942383",
+  "modified": {
+    "TreeSitter/r/src/scanner.c": {
+      "upstreamSHA256": "11e61cf41277ea18909c009640c61e0997e86bd1d92cb30ccd6ef79709fffce1",
+      "patchedSHA256": "2b07feeded36dd6c7d62b249b4d6e9b10c80bfd42947445adfc8b940bf7cb515",
+      "reason": "Free scope buffer when stack allocation fails;native allocation failure injection confirms leak before fix."
+    }
+  },
+  "patch": "TreeSitter-R-allocation.patch"
+}

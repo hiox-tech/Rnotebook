@@ -1,0 +1,243 @@
+import AppKit
+
+// MARK: - Internal Link Following
+//
+// `[[wikilinks]]` and regular `[](dest)` links share one navigation core:
+//   - `#heading`            → scroll to a heading in the current document,
+//   - `path` / `path#head`  → resolve a file under the opened file's directory
+//                             (a direct child, else a recursive search), open
+//                             it, and scroll to the heading if one was named,
+//   - external URL (scheme) → open in the default app (regular links only).
+//
+// Resolution needs only the opened file (its directory), not a vault folder.
+
+/// Implemented by the owning document so a freshly opened document can be
+/// scrolled to a heading after a cross-file link is followed.
+@MainActor
+public protocol HeadingNavigable: AnyObject {
+    func navigateToHeading(_ heading: String)
+}
+
+extension EditorTextView {
+
+    // MARK: Hit testing
+
+    /// The wikilink target under a mouse event, or nil if the click doesn't land
+    /// on wikilink display text.
+    func wikiTarget(at event: NSEvent) -> String? {
+        guard let storage = textStorage, let i = clickCharIndex(at: event) else { return nil }
+        return storage.attribute(.editorWikiTarget, at: i, effectiveRange: nil) as? String
+    }
+
+    /// True when `target` names a note that isn't there, so it can be drawn as
+    /// a placeholder. Never true for `#heading` links, or while the sandbox
+    /// hasn't granted the folder, because `fileExists` returns true for
+    /// ungranted files; the folder prompt handles that case.
+    func wikiNoteIsMissing(_ target: String) -> Bool {
+        let path = Self.splitHeading(target).path
+        guard !path.isEmpty, let docDir = document?.fileURL?.deletingLastPathComponent(),
+              FolderAccess.covers(docDir) else { return false }
+        if docDir != wikiNoteExistsDir {
+            wikiNoteExists.removeAll()
+            wikiNoteExistsDir = docDir
+        }
+        if let known = wikiNoteExists[path] { return !known }
+        let exists = wikiNoteResolves(path)
+        wikiNoteExists[path] = exists
+        return !exists
+    }
+
+    private func wikiNoteResolves(_ path: String) -> Bool {
+        resolveLinkedFile(path).map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+    }
+
+    /// Re-checks the cached missing notes; true when any now exists (its cache
+    /// entry is flipped, so the caller restyles).
+    func refreshMissingWikiNotes() -> Bool {
+        var flipped = false
+        for (path, exists) in wikiNoteExists where !exists && wikiNoteResolves(path) {
+            wikiNoteExists[path] = true
+            flipped = true
+        }
+        return flipped
+    }
+
+    // MARK: Following
+
+    /// Follows a `[[wikilink]]` target (`path#heading`, no scheme, `.md` implied).
+    public func followWikiLink(_ target: String) {
+        let (path, heading) = Self.splitHeading(target)
+        if path.isEmpty {
+            if let heading { scrollToHeading(heading) } else { NSSound.beep() }
+            return
+        }
+        openLinkedFile(path: path, heading: heading)
+    }
+
+    /// Follows a regular markdown link destination: an external URL opens in the
+    /// default app; `#heading` scrolls in-document; a local `path#heading`
+    /// resolves a file and opens it (scrolling to the heading if named).
+    public func followLinkDestination(_ destination: String) {
+        let dest = destination.trimmingCharacters(in: .whitespaces)
+        if let url = URL(string: dest), let scheme = url.scheme, scheme != "file" {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        // A markdown link destination is URL-encoded (e.g. `%20` for a space),
+        // so decode both the path and the heading anchor.
+        let (rawPath, rawHeading) = Self.splitHeading(dest)
+        let path = rawPath.removingPercentEncoding ?? rawPath
+        let heading = rawHeading.map { $0.removingPercentEncoding ?? $0 }
+        if path.isEmpty {
+            if let heading { scrollToHeading(heading) } else { NSSound.beep() }
+            return
+        }
+        openLinkedFile(path: path, heading: heading)
+    }
+
+    /// Resolves `path` to a file and opens it, scrolling the opened document to
+    /// `heading` when one is named (cross-file, via `HeadingNavigable`).
+    private func openLinkedFile(path: String, heading: String?) {
+        let resolved = resolveLinkedFile(path)
+        guard let fileURL = resolved, FolderAccess.covers(fileURL) else {
+            // Sandboxed and the folder isn't granted: the recursive search
+            // can't run and `openDocument` would fail with a permission alert.
+            // Offer the grant, then retry (once granted, `covers` is true). A
+            // resolved target outside the document's folder (absolute, `~`,
+            // `file:`) needs its own folder granted; an unresolved one means
+            // the search itself was blocked, so ask for the document's.
+            let folder = resolved?.deletingLastPathComponent() ?? ungrantedDocumentFolder
+            if FolderAccess.isSandboxed, let folder {
+                requestFolderAccess(for: folder) { [weak self] in self?.openLinkedFile(path: path, heading: heading) }
+            } else {
+                NSSound.beep()
+            }
+            return
+        }
+        NSDocumentController.shared.openDocument(withContentsOf: fileURL, display: true) { _, _, _ in
+            guard let heading else { return }
+            // Re-find the document by URL on the main actor (the NSDocument
+            // isn't Sendable, so we don't capture it across the boundary). By
+            // now its content has loaded (showWindows → loadContent).
+            Task { @MainActor in
+                let doc = NSDocumentController.shared.document(for: fileURL)
+                (doc as? HeadingNavigable)?.navigateToHeading(heading)
+            }
+        }
+    }
+
+    // MARK: Heading navigation
+
+    /// Scrolls to the first heading block whose text matches `heading`
+    /// (case-insensitive), or — when `heading` is a `^blockid` fragment — to the
+    /// block defining that id. Beeps if there is no match. This is the single
+    /// chokepoint every internal-link caller funnels through (`[[#heading]]`,
+    /// `[[note#heading]]`, `[[#^id]]`, `[[note#^id]]`, and cross-file opens via
+    /// `navigateToHeading`), so block-id dispatch and the Edit/Read surface
+    /// switch both live here.
+    public func scrollToHeading(_ heading: String) {
+        if heading.hasPrefix("^") {
+            scrollToBlockID(String(heading.dropFirst()))
+            return
+        }
+        let want = heading.lowercased()
+        for block in blocks {
+            guard case .heading = block.kind,
+                  Self.headingText(block.content).lowercased() == want else { continue }
+            scrollToBlock(block.range)
+            return
+        }
+        NSSound.beep()
+    }
+
+    /// Scrolls to the block that defines the Obsidian `^id` block reference
+    /// (a trailing `^id` at the end of a block). Beeps if none does.
+    public func scrollToBlockID(_ id: String) {
+        for block in blocks {
+            var refs: [SyntaxHighlighter.Span] = []
+            SyntaxHighlighter.parseBlockRef(block.content, into: &refs)
+            let matches = refs.contains {
+                if case .blockRef(let bid) = $0.kind { return bid == id }
+                return false
+            }
+            if matches { scrollToBlock(block.range); return }
+        }
+        NSSound.beep()
+    }
+
+    /// The document's headings in source order, for the inspector's outline.
+    /// Read off the parsed blocks, so a `#` in a code fence or front matter is
+    /// never one.
+    ///
+    /// Whole-document: the open inspector calls this once per typing pause
+    /// (0.3s debounce), whatever the edit touched — ~5.4ms in a debug build on
+    /// 12,073 blocks / 1,509 headings, mostly the block iteration. Bounded
+    /// alternative if it matters: recompute only the edited blocks' headings
+    /// (performance.md §4).
+    public var outlineHeadings: [OutlineHeading] {
+        blocks.compactMap { block in
+            guard case .heading(let level) = block.kind else { return nil }
+            return OutlineHeading(level: level, title: OutlineHeading.title(of: block.content),
+                                  range: block.range)
+        }
+    }
+
+    /// Selects and scrolls the native editor to the target block.
+    public func scrollToBlock(_ range: NSRange) {
+        setSelectedRange(range)
+        scrollRangeToVisible(range)
+    }
+
+    /// The text of a heading line, stripped of its leading `#`s and whitespace.
+    static func headingText(_ line: String) -> String {
+        var s = Substring(line)
+        while s.first == "#" { s = s.dropFirst() }
+        return s.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Splits `path#heading` (or `#heading`, or `path`) into a path and the
+    /// deepest heading component (so `Note#H1#H2` targets `H2`). A nil heading
+    /// means none was named.
+    static func splitHeading(_ s: String) -> (path: String, heading: String?) {
+        let ns = s as NSString
+        let hash = ns.range(of: "#")
+        guard hash.location != NSNotFound else {
+            return (s.trimmingCharacters(in: .whitespaces), nil)
+        }
+        let path = ns.substring(to: hash.location).trimmingCharacters(in: .whitespaces)
+        let rest = ns.substring(from: hash.upperBound)
+        let heading = rest.split(separator: "#").last
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+        return (path, heading)
+    }
+
+    // MARK: File resolution
+
+    /// Resolves a link `path` to a file URL. Absolute / `~` / `file:` paths load
+    /// directly; otherwise it resolves under the opened file's directory — a
+    /// direct child first, else a recursive search by filename — appending `.md`
+    /// when the path has no extension (Obsidian-style wikilinks omit it).
+    func resolveLinkedFile(_ path: String) -> URL? {
+        if let url = URL(string: path), url.scheme == "file" { return url }
+        if path.hasPrefix("/") { return URL(fileURLWithPath: path) }
+        if path.hasPrefix("~") { return URL(fileURLWithPath: (path as NSString).expandingTildeInPath) }
+
+        guard let docDir = document?.fileURL?.deletingLastPathComponent() else { return nil }
+        let fm = FileManager.default
+        let rel = (path as NSString).pathExtension.isEmpty ? path + ".md" : path
+
+        let direct = docDir.appendingPathComponent(rel)
+        if fm.fileExists(atPath: direct.path) { return direct }
+
+        // Recursive search by the link's filename (Obsidian resolves by name).
+        let wantName = (rel as NSString).lastPathComponent.lowercased()
+        if let walker = fm.enumerator(at: docDir, includingPropertiesForKeys: nil,
+                                       options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
+            for case let url as URL in walker where url.lastPathComponent.lowercased() == wantName {
+                return url
+            }
+        }
+        return nil
+    }
+}

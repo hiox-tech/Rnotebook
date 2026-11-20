@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook 帮助"><meta name="description" content="界面导览"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>界面导览</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">使用手册</a></nav><main><a name="rnotebook-interface" id="rnotebook-interface"></a><h1 id="title">界面导览</h1>
+<p>文稿窗口由左侧编辑区和右侧检查器组成。工具栏操作当前文稿；检查器内容属于这个窗口的 R 会话。</p>
+<h2 id="section-0">Code：精确编辑原文</h2>
+<figure><img src="../images/workspace-code-zh.png" alt="Code 界面：顶部文稿操作，下方源码、行号、折叠槽与右侧 minimap；检查器在窗口右栏。"><figcaption>Code 界面：顶部文稿操作，下方源码、行号、折叠槽与右侧 minimap；检查器在窗口右栏。</figcaption></figure>
+<p>顶部文件名菜单提供保存入口；“文件”菜单包含另存为和文稿同步。Code / Visual 切换编辑方式；其后是撤销/重做、运行全部与运行范围菜单、Quarto 渲染按钮。Code 中行号帮助定位，围栏和章节旁的折叠箭头收起显示内容，minimap 用于长文稿导航。折叠不删除源码。</p>
+<h2 id="section-1">Visual：在正文中写作</h2>
+<figure><img src="../images/workspace-visual-zh.png" alt="Visual 界面：标题、格式化文字、R 块与结果在同一编辑表面，右边的窄标题导航可跳转章节。"><figcaption>Visual 界面：标题、格式化文字、R 块与结果在同一编辑表面，右边的窄标题导航可跳转章节。</figcaption></figure>
+<p>Visual 将常用 Markdown 显示为排版内容。编辑工具栏及“格式”“插入”菜单提供标题、强调、列表、链接、图片、公式和表格等操作。块旁可运行或格式化 R 代码，复制按钮复制代码内容；正文附近显示交互结果。右侧窄导航按标题跳转。</p>
+<p>Code 与 Visual 使用同一份原文，切换不生成第二份文稿。复杂 YAML、Quarto 参数或原始标记适合在 Code 中编辑。</p>
+<h2 id="section-2">右侧检查器</h2>
+<div class="table-scroll"><table><thead><tr><th>区域</th><th>如何使用</th></tr></thead><tbody><tr><td>顶部 R 工具</td><td>电源启动/停止会话；重启清除变量并重新开始；RData 单独保存工作区</td></tr><tr><td>R 状态与版本</td><td>显示版本与忙碌/就绪状态；悬停查看最终运行摘要</td></tr><tr><td>变量</td><td>刷新、按名称/类型/摘要筛选、清空；点击对象打开只读预览</td></tr><tr><td>变量分页</td><td>“载入更多”每次取下一批，筛选覆盖整个会话元信息</td></tr><tr><td>R 包</td><td>查看包、刷新、筛选和安装；包详情有说明及官方入口</td></tr><tr><td>帮助</td><td>输入函数或主题，打开 R 官方搜索结果</td></tr></tbody></table></div>
+<p>运行全部时，R 状态旁的扇形显示按已处理块数计算的进度，不代表剩余秒数；本轮结果在整轮结束时一起显示。手动运行单块继续即时显示输出。</p>
+<h2 id="section-3">渲染面板</h2>
+<figure><img src="../images/render-panel-zh.png" alt="Quarto 渲染面板：格式、输出位置和参数来源在顶部，参数页与日志用于配置和排查。"><figcaption>Quarto 渲染面板：格式、输出位置和参数来源在顶部，参数页与日志用于配置和排查。</figcaption></figure>
+<p>先选格式和保存位置，再选 YAML 或自定义参数。自定义分为文档、样式、代码与图形、更多参数，按格式显示适用项目。底部日志查看实际执行与错误；取消用于中止任务。详见<a href="r-export.html">R 运行与报告导出</a>。</p>
+<h2 id="section-4">帮助与设置窗口</h2>
+<p>详细帮助左侧目录可展开小节，右侧阅读图文；顶部可搜索、前进后退、回首页和收起目录。两个简明帮助窗口分别用于快速操作和常用语法速查。</p>
+<p>设置顶部依次为通用、文档、字体、高亮、补全、格式化、环境，所有选项直接在对应页面调整。拖动文稿分隔栏可改变检查器宽度。多个文稿分别开窗，可从“窗口”菜单切换。</p></main></body></html>

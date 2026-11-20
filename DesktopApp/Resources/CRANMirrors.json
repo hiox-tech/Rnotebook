@@ -1,0 +1,330 @@
+[
+  {
+    "name": "0-Cloud [https]",
+    "url": "https://cloud.r-project.org"
+  },
+  {
+    "name": "Argentina (La Plata)",
+    "url": "http://mirror.fcaglp.unlp.edu.ar/CRAN"
+  },
+  {
+    "name": "Australia (Canberra) [https]",
+    "url": "https://cran.csiro.au"
+  },
+  {
+    "name": "Australia (Melbourne 1) [https]",
+    "url": "https://mirror.aarnet.edu.au/pub/CRAN"
+  },
+  {
+    "name": "Australia (Melbourne 2) [https]",
+    "url": "https://cran.ms.unimelb.edu.au"
+  },
+  {
+    "name": "Austria (Wien) [https]",
+    "url": "https://cran.wu.ac.at"
+  },
+  {
+    "name": "Belgium (Antwerp) [https]",
+    "url": "https://www.freestatistics.org/cran"
+  },
+  {
+    "name": "Belgium (Brussels) [https]",
+    "url": "https://ftp.belnet.be/mirror/CRAN"
+  },
+  {
+    "name": "Brazil (PR) [https]",
+    "url": "https://cran-r.c3sl.ufpr.br"
+  },
+  {
+    "name": "Brazil (SP 1) [https]",
+    "url": "https://vps.fmvz.usp.br/CRAN"
+  },
+  {
+    "name": "Brazil (SP 2) [https]",
+    "url": "https://brieger.esalq.usp.br/CRAN"
+  },
+  {
+    "name": "Bulgaria [https]",
+    "url": "https://ftp.uni-sofia.bg/CRAN"
+  },
+  {
+    "name": "Canada (MB) [https]",
+    "url": "https://muug.ca/mirror/cran"
+  },
+  {
+    "name": "Canada (ON 1) [https]",
+    "url": "https://mirror.csclub.uwaterloo.ca/CRAN"
+  },
+  {
+    "name": "Canada (ON 2) [https]",
+    "url": "https://cran.mirror.rafal.ca"
+  },
+  {
+    "name": "Chile (Santiago) [https]",
+    "url": "https://cran.dcc.uchile.cl"
+  },
+  {
+    "name": "China (Beijing 1) [https]",
+    "url": "https://mirrors.tuna.tsinghua.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Beijing 2) [https]",
+    "url": "https://mirrors.bfsu.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Beijing 3) [https]",
+    "url": "https://mirrors.pku.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Hefei) [https]",
+    "url": "https://mirrors.ustc.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Hangzhou) [https]",
+    "url": "https://mirrors.zju.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Hong Kong) [https]",
+    "url": "https://mirror-hk.koddos.net/CRAN"
+  },
+  {
+    "name": "China (Jinan) [https]",
+    "url": "https://mirrors.qlu.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Lanzhou) [https]",
+    "url": "https://mirror.lzu.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Nanjing) [https]",
+    "url": "https://mirrors.nju.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Shanghai 2) [https]",
+    "url": "https://mirrors.sjtug.sjtu.edu.cn/cran"
+  },
+  {
+    "name": "China (Shenzhen) [https]",
+    "url": "https://mirrors.sustech.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Wuhan) [https]",
+    "url": "https://mirrors.hust.edu.cn/CRAN"
+  },
+  {
+    "name": "China (Xi'an) [https]",
+    "url": "https://mirrors.xjtu.edu.cn/cran"
+  },
+  {
+    "name": "China (Xianyang) [https]",
+    "url": "https://mirrors.nwafu.edu.cn/cran"
+  },
+  {
+    "name": "Costa Rica [https]",
+    "url": "https://mirror.uned.ac.cr/cran"
+  },
+  {
+    "name": "Denmark [https]",
+    "url": "https://mirrors.dotsrc.org/cran"
+  },
+  {
+    "name": "East Asia [https]",
+    "url": "https://cran.asia"
+  },
+  {
+    "name": "Ecuador (Cuenca) [https]",
+    "url": "https://mirror.cedia.org.ec/CRAN"
+  },
+  {
+    "name": "Finland (Helsinki) [https]",
+    "url": "https://cran.030-datenrettung.de"
+  },
+  {
+    "name": "France (Lyon 1) [https]",
+    "url": "https://pbil.univ-lyon1.fr/CRAN"
+  },
+  {
+    "name": "France (Lyon 2) [https]",
+    "url": "https://mirror.ibcp.fr/pub/CRAN"
+  },
+  {
+    "name": "France (Paris 1) [https]",
+    "url": "https://cran.asnr.fr"
+  },
+  {
+    "name": "Germany (Erlangen) [https]",
+    "url": "https://ftp.fau.de/cran"
+  },
+  {
+    "name": "Germany (Falkenstein 2) [https]",
+    "url": "https://mirror.rabisu.com/mirrors/CRAN"
+  },
+  {
+    "name": "Germany (Göttingen) [https]",
+    "url": "https://ftp.gwdg.de/pub/misc/cran"
+  },
+  {
+    "name": "Germany (Leipzig) [https]",
+    "url": "https://mirror.dogado.de/cran"
+  },
+  {
+    "name": "Germany (Münster) [https]",
+    "url": "https://cran.uni-muenster.de"
+  },
+  {
+    "name": "Germany (Nürnberg) [https]",
+    "url": "https://mirror.clientvps.com/CRAN"
+  },
+  {
+    "name": "Germany (Oberhausen) [https]",
+    "url": "https://mirror.kamp.de/cran"
+  },
+  {
+    "name": "Hungary [https]",
+    "url": "https://cran.r-project.hu"
+  },
+  {
+    "name": "India (Bhubaneswar) [https]",
+    "url": "https://mirror.niser.ac.in/cran"
+  },
+  {
+    "name": "India (New Delhi) [https]",
+    "url": "https://cran.isid.ac.in"
+  },
+  {
+    "name": "Indonesia (Banda Aceh) [https]",
+    "url": "https://cran.usk.ac.id"
+  },
+  {
+    "name": "Italy (Milano) [https]",
+    "url": "https://cran.mirror.garr.it/CRAN"
+  },
+  {
+    "name": "Italy (Padua) [https]",
+    "url": "https://cran.stat.unipd.it"
+  },
+  {
+    "name": "Japan (Yonezawa) [https]",
+    "url": "https://ftp.yz.yamagata-u.ac.jp/pub/cran"
+  },
+  {
+    "name": "Mexico (Mexico City) [https]",
+    "url": "https://cran.itam.mx"
+  },
+  {
+    "name": "Morocco [https]",
+    "url": "https://mirror.marwan.ma/cran"
+  },
+  {
+    "name": "Netherlands (Dronten) [https]",
+    "url": "https://mirror.lyrahosting.com/CRAN"
+  },
+  {
+    "name": "New Zealand [https]",
+    "url": "https://cran.stat.auckland.ac.nz"
+  },
+  {
+    "name": "Norway [https]",
+    "url": "https://cran.uib.no"
+  },
+  {
+    "name": "Poland [https]",
+    "url": "https://cran.mi2.ai"
+  },
+  {
+    "name": "Portugal (Lisbon) [https]",
+    "url": "https://cran.radicaldevelop.com"
+  },
+  {
+    "name": "Russia (Novosibirsk) [https]",
+    "url": "https://mirror.truenetwork.ru/CRAN"
+  },
+  {
+    "name": "Saudi Arabia (Riyadh) [https]",
+    "url": "https://mirror.maeen.sa/cran"
+  },
+  {
+    "name": "Spain (A Coruña) [https]",
+    "url": "https://ftp.cixug.es/CRAN"
+  },
+  {
+    "name": "Spain (Madrid) [https]",
+    "url": "https://cran.rediris.es"
+  },
+  {
+    "name": "Sweden (Umeå) [https]",
+    "url": "https://mirror.accum.se/mirror/CRAN"
+  },
+  {
+    "name": "Switzerland (Zurich 1) [https]",
+    "url": "https://stat.ethz.ch/CRAN"
+  },
+  {
+    "name": "Switzerland (Zurich 2) [https]",
+    "url": "https://mirror.metanet.ch/cran"
+  },
+  {
+    "name": "Turkey (Denizli) [https]",
+    "url": "https://cran.pau.edu.tr"
+  },
+  {
+    "name": "UK (Bristol) [https]",
+    "url": "https://www.stats.bris.ac.uk/R"
+  },
+  {
+    "name": "UK (London 1) [https]",
+    "url": "https://cran.ma.imperial.ac.uk"
+  },
+  {
+    "name": "USA (IN)",
+    "url": "http://ftp.ussg.iu.edu/CRAN"
+  },
+  {
+    "name": "USA (MI) [https]",
+    "url": "https://mirror.its.umich.edu/cran"
+  },
+  {
+    "name": "USA (MO) [https]",
+    "url": "https://cran.wustl.edu"
+  },
+  {
+    "name": "USA (NC) [https]",
+    "url": "https://archive.linux.duke.edu/cran"
+  },
+  {
+    "name": "USA (OH) [https]",
+    "url": "https://cran.case.edu"
+  },
+  {
+    "name": "USA (OR) [https]",
+    "url": "https://ftp.osuosl.org/pub/cran"
+  },
+  {
+    "name": "USA (PA 1) [https]",
+    "url": "https://lib.stat.cmu.edu/R/CRAN"
+  },
+  {
+    "name": "USA (PA 2) [https]",
+    "url": "https://cran.mirrors.hoobly.com"
+  },
+  {
+    "name": "USA (TN) [https]",
+    "url": "https://mirrors.nics.utk.edu/cran"
+  },
+  {
+    "name": "USA (UT) [https]",
+    "url": "https://mirror.chpc.utah.edu/pub/cran"
+  },
+  {
+    "name": "United Arab Emirates [https]",
+    "url": "https://cran.nyuad.nyu.edu"
+  },
+  {
+    "name": "Uruguay [https]",
+    "url": "https://espejito.fder.edu.uy/cran"
+  },
+  {
+    "name": "Worldwide 2 [https]",
+    "url": "https://mirrors.cicku.me/cran"
+  }
+]

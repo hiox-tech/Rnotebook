@@ -1,0 +1,13 @@
+# 普通 Markdown 示例
+
+````markdown
+```{r}
+#| label: example-only
+example_value <- 0
+```
+````
+
+```{r}
+#| label: actual-cell
+actual_value <- "``` is a string"
+```

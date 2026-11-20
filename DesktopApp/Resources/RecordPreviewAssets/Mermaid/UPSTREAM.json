@@ -1,0 +1,13 @@
+{
+  "version": "1.1.3",
+  "archiveURL": "https://github.com/I7T5/edmund-extensions/releases/download/mermaid-assets-1.1.3/beautiful-mermaid-1.1.3.tar.gz",
+  "archiveSHA256": "6c7dfaeff7fbf7ef9c88eb9531ab332b929db819d75200d333e483001eef1ab7",
+  "upstream": "https://github.com/lukilabs/beautiful-mermaid",
+  "files": {
+    "beautiful-mermaid.js": "135071f07173aba0473343630291d93d0b065e76a3db4619937b8d87cf4fb86c",
+    "licenses/LICENSE-beautiful-mermaid": "f05f5a4009eae7fadfd4a55f77ffe10948f621982d56076667e68afbb54de894",
+    "licenses/LICENSE-elkjs": "89591d4578fb1ebd91501312a3d25f021bd865a2e436641c1cf7b1bc7e3c1617",
+    "licenses/LICENSE-entities": "cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164"
+  },
+  "omitted": "AppleDouble metadata only; JavaScript and all three licenses retained byte-for-byte"
+}

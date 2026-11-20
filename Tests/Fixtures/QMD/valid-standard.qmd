@@ -1,0 +1,16 @@
+---
+title: "手写与 GUI 代码"
+format: html
+---
+
+# 前言 🧪
+
+```{r}
+#| label: manual-cell
+manual_value <- 7
+```
+
+~~~{r}
+#| label: second-cell
+manual_value + 1
+~~~

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook 帮助"><meta name="description" content="Quarto语法"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>Quarto语法</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">使用手册</a></nav><main><a name="rnotebook-syntax" id="rnotebook-syntax"></a><h1 id="title">Quarto语法</h1>
+<p>这份参考针对 Rnotebook 当前编辑器和导出流程。Code 可保留并编辑完整原文；Visual 提供常用 Markdown 与下列扩展的排版。Quarto 的最终输出还会受到格式、引擎和 YAML 的影响，不一定与 Visual 完全相同。</p>
+<h2 id="section-0">标题、段落与行内样式</h2>
+<div class="table-scroll"><table><thead><tr><th>用途</th><th>写法</th></tr></thead><tbody><tr><td>一级至六级标题</td><td><code># 标题</code> 至 <code>###### 标题</code></td></tr><tr><td>段落</td><td>段落之间留空行</td></tr><tr><td>强制换行</td><td>行末两个空格，或行末反斜杠</td></tr><tr><td>加粗、斜体、组合</td><td><code>**加粗**</code>、<code>*斜体*</code>、<code>***粗斜体***</code></td></tr><tr><td>删除线</td><td><code>~~删除~~</code></td></tr><tr><td>高亮</td><td><code>==重点==</code></td></tr><tr><td>行内代码</td><td><code> `mean(x)` </code></td></tr><tr><td>下划线</td><td><code>&lt;u&gt;文字&lt;/u&gt;</code></td></tr><tr><td>上标、下标</td><td><code>&lt;sup&gt;2&lt;/sup&gt;</code>、<code>&lt;sub&gt;i&lt;/sub&gt;</code></td></tr><tr><td>键帽</td><td><code>&lt;kbd&gt;⌘S&lt;/kbd&gt;</code></td></tr><tr><td>转义标记</td><td><code>\*</code> 表示普通星号</td></tr></tbody></table></div>
+<h2 id="section-1">列表、任务、引用与分隔线</h2>
+<pre><code>- 无序项目
+  - 嵌套项目
+
+1. 第一步
+2. 第二步
+
+- [ ] 待完成
+- [x] 已完成
+
+&gt; 引用文字
+
+---
+</code></pre>
+<p>分隔线与 YAML 都可能使用 <code>---</code>。文档开头成对的 <code>---</code> 用于 YAML，正文中的分隔线按 Markdown 上下文识别。</p>
+<h2 id="section-2">链接、图片与尺寸</h2>
+<pre><code>[Quarto](https://quarto.org/)
+[另一份笔记](notes.qmd)
+[本页标题](#章节)
+![图片说明](images/plot.png)
+![图片说明|320](images/plot.png)
+![图片说明|320x200](images/plot.png)
+[[notes]]
+[[notes#章节|显示文字]]
+![[plot.png|320x200]]
+</code></pre>
+<p>图片可通过“插入”菜单导入或链接。文件路径以笔记位置为基准；写 wiki 链接不会自动建立笔记库索引、补扩展名或复制目标文件。wiki 图片嵌入用于受支持的图片，不会把另一份文档内容转引进来。</p>
+<h2 id="section-3">表格与脚注</h2>
+<pre><code>| 指标 | 数值 |
+| :--- | ---: |
+| 均值 | 18 |
+| 样本量 | 3 |
+
+这里有一个脚注[^note]。
+
+[^note]: 脚注说明。
+</code></pre>
+<p>普通表格是 Markdown 文本。R 生成的 kable/flextable 等结果是运行结果预览，保存正文不会自动恢复这些历史输出。</p>
+<h2 id="section-4">普通代码块与可执行 R 代码块</h2>
+<p>普通围栏用来显示代码；Rnotebook 的交互运行入口针对完整的 R 代码块。左侧示例中的语言标记决定用途。</p>
+<pre><code>```text
+这里是展示用文本。
+```
+
+```r
+x &lt;- 1  # 展示用的 R 代码
+```
+
+```{r}
+x &lt;- c(12, 18, 24)
+mean(x)
+```
+</code></pre>
+<p>使用代码块选项时可写 Quarto 的 <code>#|</code> 行。例如下列 <code>echo</code>/<code>warning</code> 是 <strong>Quarto 渲染选项</strong>；不要把它们当成交互会话的权限或执行隔离设置。</p>
+<pre><code>```{r}
+#| label: example
+#| echo: true
+#| warning: false
+summary(iris)
+```
+</code></pre>
+<p>围栏需要闭合。普通文本、其他语言代码和不完整围栏不会因为出现在文档里就自动运行。</p>
+<p>支持 RMD 的常见参数块头，如 <code>{r setup, include=FALSE}</code>。批量运行遵守静态 <code>eval: false</code>，单块／选区手动运行可覆盖；<code>error: true</code> 允许普通错误后继续。完整规则见<a href="r-export.html">R 运行与报告导出</a>。</p>
+<h2 id="section-5">YAML 文档信息</h2>
+<pre><code>---
+title: &quot;分析报告&quot;
+author: &quot;作者&quot;
+format:
+  html:
+    toc: true
+execute:
+  echo: true
+---
+</code></pre>
+<p>YAML 必须放在文档开头。导出选择“YAML”时读取文档配置；选择“自定义”时使用面板里的对应参数，不会把面板草稿写回笔记。完整可用选项以 Quarto 文档及所选格式为准。</p>
+<h2 id="section-6">行内公式与公式块</h2>
+<pre><code>均值为 $\bar{x}$。
+
+$$
+E = mc^2
+$$
+</code></pre>
+<p>使用 LaTeX 数学表达式。编辑器的显示与 HTML/Word/PDF 的字体、排版或可支持命令可能不同；复杂公式请检查最终输出。</p>
+<h2 id="section-7">Mermaid 图形</h2>
+<pre><code>```mermaid
+flowchart LR
+    A[准备数据] --&gt; B[运行分析]
+    B --&gt; C[导出报告]
+```
+</code></pre>
+<p>内置模板覆盖流程图、时序图、类图、状态图、实体关系图和 XY 图。通过“插入 → Mermaid图形”选择模板。Mermaid 围栏用于图形，不运行 R；最终导出由 Quarto 的 Mermaid 流程处理，具体图形写法和输出格式需要兼容。</p>
+<h2 id="section-8">提示块与折叠提示</h2>
+<pre><code>&gt; [!NOTE] 说明
+&gt; 这里是提示正文。
+
+&gt; [!TIP]- 点击展开
+&gt; 这里是可折叠正文。
+
+&gt; [!WARNING]+ 默认展开
+&gt; 请检查参数。
+</code></pre>
+<p>基本类型有 note、tip、important、warning、caution；也支持 info、todo、abstract、success、question、failure、danger、bug、example、quote 等类型及其别名。未知类型保留为普通引用。静态导出会保留折叠正文，不等同于交互折叠界面。</p>
+<p>Quarto 原生提示块也可在 Code 中手写，交给 Quarto 渲染；不要据此推断所有 Quarto Div 都会在 Visual 中提供相同布局。</p>
+<pre><code>::: {.callout-note}
+这是 Quarto 原生提示块。
+:::
+</code></pre>
+<h2 id="section-9">注释、标签与块锚点</h2>
+<pre><code>&lt;!-- HTML 注释 --&gt;
+%%行内注释%%
+
+%%
+跨段注释
+%%
+
+#研究笔记
+段落内容。 ^block-id
+</code></pre>
+<p>支持标签和块标记的识别，但不建立全局标签搜索或资源索引。注释影响显示或导出正文；<strong>不会阻止此前已由 R/knitr 执行的代码</strong>。若要控制渲染执行，应使用 Quarto 执行选项。</p>
+<h2 id="section-10">导出兼容与更多 QMD 语法</h2>
+<p>导出默认开启“兼容 Edmund 语法”，转换高亮、注释、提示/折叠、wiki 链接/图片、尺寸、块锚点和部分简单 HTML 标记。可在渲染面板关闭，用户自有 filter 仍保留。不同格式下颜色、图标和键帽等外观可以有差异。</p>
+<p>引文、交叉引用、更多 Div、格式专属参数等 QMD 功能可在 Code 中编辑，由 Quarto 处理；此处不承诺完整的 Visual 语义预览，也不把 RMD 自动转换为其他引擎的专有语义。</p>
+<p>继续查看 <a href="https://quarto.org/docs/authoring/markdown-basics.html" target="_blank" rel="noopener">QMD 官方语法</a>、<a href="https://quarto.org/docs/computations/r.html" target="_blank" rel="noopener">Quarto 中使用 R</a>，或返回<a href="quick-start.html">快速开始</a>。</p></main></body></html>

@@ -1,0 +1,16 @@
+{
+  "Edmund": "ae86e2a80a3e937fb728731ed085b995ceb0a77d",
+  "dependencies": {
+    "swift-markdown": {
+      "commit": "7d9a5ce307528578dfa777d505496bd5f544ad94",
+      "archiveSHA256": "da893a73bec4e7f949b9da02d05fd4b9ea9981462f1ff2982ab82f85939e6435"
+    },
+    "cmark": {
+      "commit": "5d9bdaa4228b381639fff09403e39a04926e2dbe",
+      "archiveSHA256": "7d749840c43dd9cfe737944916a71b913b3f620fd6309e317b207e67ab5df5a1"
+    }
+  },
+  "SwiftMath": "b44a787e94cf4ada5caf1a38626ccbc7f20b46d0",
+  "note": "Fixed upstream baseline: SOURCE-HASHES.json. Fourteen files have recorded source interaction/line-number fixes, optional selection accent, host margin/cursor/paste/source-presentation interfaces, list-marker spacing, opt-in vertical-scroll horizontal preservation, bundled Mermaid loading and native SVG compound-class paint and diagram width refresh and empty EOF selection stability and provisional source line-number mapping/EOF row geometry and safe host-child hover event handling; see LOCAL-PATCHES.json v12 and patches/Source-Caret-Presentation.patch. The other 134 core files remain byte-identical. No undo or layout-engine replacement. Rnotebook subsequently prunes unused app services; the counts above describe the inherited pre-pruning baseline, not the current subset. See RNOTEBOOK-PRUNING.json.",
+  "rnotebookPruning": "RNOTEBOOK-PRUNING.json"
+}

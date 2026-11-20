@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook 帮助"><meta name="description" content="R 运行与报告导出"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>R 运行与报告导出</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">使用手册</a></nav><main><a name="rnotebook-r-export" id="rnotebook-r-export"></a><h1 id="title">R 运行与报告导出</h1>
+<p>交互运行用于探索，Quarto 渲染用于生成报告。两者都使用文档代码，但会话与执行上下文不同。</p>
+<h2 id="section-0">运行范围</h2>
+<div class="table-scroll"><table><thead><tr><th>操作</th><th>入口</th></tr></thead><tbody><tr><td>当前 R 代码块</td><td>⌘↩，或块旁运行按钮</td></tr><tr><td>选中的代码</td><td>⌥⌘↩</td></tr><tr><td>全部 R 代码块</td><td>⇧⌘↩</td></tr><tr><td>当前位置以上或以下的块</td><td>笔记本菜单/运行菜单</td></tr><tr><td>中断正在运行的代码</td><td>⌘.，或运行中的停止按钮</td></tr></tbody></table></div>
+<p>围栏需要完整，光标／选区需要落在可运行的 R 内容中。以上／以下按当前位置确定范围。支持常见 RMD 块头，例如 <code>{r setup, include=FALSE}</code>，以及 Quarto 容器中的普通 R 块。公式、闭合 HTML 和长围栏示例不再禁用文档中其他明确的 R 块；示例里的代码不会运行。</p>
+<p>列表／引用中的复杂嵌套围栏、无法明确映射的 HTML 内嵌 Markdown 仍不支持交互运行。未闭合区域可能影响到文末；其他位置明确的块可以单独运行，批量执行则先检查整个请求范围。</p>
+<h2 id="section-1">批量与手动运行</h2>
+<p>运行全部／以上／以下遵守静态布尔 <code>eval</code>：<code>#| eval: false</code> 或 RMD <code>eval=FALSE</code> 的块会跳过。运行当前块、块旁按钮和运行选区属于手动执行，仍会执行明确指定的原文，并在禁用 eval 时给出状态提示。全部块都跳过时，不启动 R，也不要求为未命名笔记选择保存位置。</p>
+<p>默认在首个错误停止。块设置 <code>#| error: true</code> 或 <code>error=TRUE</code> 时，普通运行时错误后可继续同块后续表达式及后续块；失败仍记为失败。选区执行始终首错停止。中断、进程断连、资源限制等故障始终停止，不能被 <code>error: true</code> 覆盖。</p>
+<p>批量结束后，悬停右侧 R 状态图标或版本号可查看成功、跳过、失败及未运行数量。跳过的块显示“本次已跳过”，旧结果原样保留，不算本次成功。</p>
+<h2 id="section-2">支持的执行选项</h2>
+<p>交互批量运行读取文档 YAML 的 <code>knitr.opts_chunk</code>、<code>execute</code>，再由块头和块顶部 <code>#|</code> 选项覆盖。<code>execute.enabled: false</code> 禁用整个批次，块级 eval 不能重新开启；明确的手动执行仍可用。支持常见块式和单行映射、注释及引号标量。标签必须唯一且符合支持的格式。</p>
+<p>只静态解释布尔 eval/error；不执行参数表达式。表达式编号向量、YAML 标签／别名／继承、外部 metadata、child/code/ref.label 等代码替换机制不能静默变成普通运行，遇到相关不支持配置会在批量开始前提示。动态 <code>knitr::opts_chunk$set()</code> 不决定应用内调度。完整语义请使用 Quarto 渲染；不自动扫描项目配置。</p>
+<p><code>echo</code>、<code>include</code>、<code>warning</code>、<code>message</code>、图形参数和 cache/freeze 的渲染效果由 Quarto 处理。应用内保留调试输出，<code>include: false</code> 不表示跳过代码。</p>
+<h2 id="section-3">会话与变量</h2>
+<p>每份文档使用独立 R 会话。右侧电源启动/停止，旁边按钮重启；停止、重启会清除变量，先确认。中断当前运行和停止整个会话是不同操作。</p>
+<p>变量可只读预览，list 可逐级展开，大对象按需加载。清空变量同样需要确认。“保存 R 工作区…”显式保存 RData，保存笔记正文不等于保存内存。重新打开笔记不自动恢复历史输出或执行代码。</p>
+<p>工作目录默认是笔记文件夹；R 代码中可用 <code>getwd()</code> 查看。更换 R 或包库后按提示重启会话。</p>
+<p>“笔记本 → 重启 R 并运行全部…”从干净会话检查文档，先确认清除变量；取消不执行，确认后按当前正文和批量选项重新准备任务。</p>
+<h2 id="section-4">包与 R 帮助</h2>
+<p>在检查器安装页选择 CRAN 镜像，搜索并选中包，再明确点击安装；也可选择本地安装包。安装目录来自环境设置。</p>
+<p>右侧帮助搜索直接打开官方 R 搜索结果，不要求先启动 R 或保存笔记。“帮助”菜单继续保留 R 官方帮助、Quarto 和 QMD 官方语法网页。</p>
+<h2 id="section-5">导出设置</h2>
+<p>使用 Quarto 工具栏按钮或 ⇧⌘E。选择 HTML、Word、PDF/LaTeX 或 PDF/Typst，指定保存位置，可选择完成后打开。</p>
+<p>参数来源默认为文档 YAML。切到自定义后按组调整文档、样式、代码与图形等参数；切回 YAML 时，隐藏的自定义草稿不会影响渲染，也不会被写回笔记。</p>
+<p>自定义 HTML 使用主题及本地可用字体回退，不自动下载主题的网络字体，以免单文件资源嵌入阶段等待外部服务。YAML 模式继续遵守文档样式；用户自己引用的远程图片、字体或其他资源仍可能需要网络。</p>
+<h2 id="section-6">可复现与失败处理</h2>
+<p>导出在独立执行上下文中重新运行代码，不直接携带交互会话中的对象。将读取数据、加载包与对象创建写进笔记，并检查相对路径。</p>
+<p>需要 TeX 的 PDF 引擎应先正确安装并配置；应用不自动安装 TeX。遇到缺包、代码错误或输出失败，在导出面板查看日志，按实际错误处理。取消或失败时不会把未完成结果当作正式成功输出。</p>
+<p>Edmund 兼容转换的范围见<a href="syntax.html">Quarto语法</a>。完整参数请看 <a href="https://quarto.org/docs/guide/" target="_blank" rel="noopener">Quarto 使用指南</a>。</p>
+<h2 id="section-7">结果与变量的阅读</h2>
+<p>运行全部/以上/以下将本轮结果暂存，在整轮结束或中断后统一显示已执行内容。未执行的旧结果保留，不当作本次成功；单块手动运行仍即时输出。R 状态前的扇形以处理块数显示进度。</p>
+<p>变量列表每批载入最多 500 条，底部“载入更多”可浏览剩余对象；筛选名称、类型与摘要时搜索完整会话元信息，而不只搜索已载入行。R 忙时筛选等待本次运行完成。对象预览只读，清空变量会先要求确认。</p></main></body></html>

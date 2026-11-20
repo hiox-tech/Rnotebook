@@ -1,0 +1,5 @@
+/*-- scss:defaults --*/
+// Custom single-file exports use locally available font fallbacks. Bootswatch
+// themes otherwise import Google Fonts while Pandoc embeds resources, which
+// can stall an otherwise fully local render. Document-YAML mode is untouched.
+$web-font-path: false;

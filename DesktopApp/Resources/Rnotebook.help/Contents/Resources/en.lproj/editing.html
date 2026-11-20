@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook Help"><meta name="description" content="Editing and Resources"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>Editing and Resources</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">User Guide</a></nav><main><a name="rnotebook-editing" id="rnotebook-editing"></a><h1 id="title">Editing and Resources</h1>
+<p>Code and Visual edit the same source. Choose the view that suits the content, then use the toolbar and menus.</p>
+<h2 id="section-0">Code and Visual</h2>
+<p>Use Code for YAML, longer code and precise markup. Use Visual for prose layout, images, formulas, diagrams and formatting tools. Format commands remain available; you decide whether they suit the current content. Undo can reverse edits.</p>
+<p>Switching views does not run R. Set separate fonts and sizes for the two views, and a highlighting theme for Code.</p>
+<h2 id="section-1">Folding and navigation</h2>
+<p>In Code, arrows beside the line numbers fold fenced blocks or sections beneath headings. View offers Toggle Current Fold, Fold All Code Blocks, Fold All Sections and Expand All. Folding only changes the display: saving, copying and running use the complete source. Visual shows the full document; returning to Code retains this window&#x27;s folds.</p>
+<p>Visual has compact heading navigation on the right, in the position occupied by Code&#x27;s minimap. Click a heading to jump, or use its arrow to expand or collapse child headings. A subtle highlight marks the current section. The formatting toolbar is centered over the text pane.</p>
+<h2 id="section-2">Formatting and insertion</h2>
+<p>Use Format for headings, emphasis, underline, highlighting, lists and quotes. Use Insert for links, images, tables, R/display code, math and Mermaid. Narrow windows move some tools into the overflow menu.</p>
+<p>Choose a heading level on an empty line before typing. Formatting changes the Markdown source; switch to Code to inspect the markers.</p>
+<h2 id="section-3">R completion and formatting</h2>
+<p>Press Control-Space inside a complete R chunk to request completion. Turn it off in Settings → Completion if desired. Completion edits text; it does not execute code.</p>
+<p>Press ⇧⌘I, choose Edit → Format R Chunk or use the chunk-side format button to format the current complete R chunk. It does not start R and normally uses one Undo step. Finish input-method composition before running the command.</p>
+<h2 id="section-4">Find and text size</h2>
+<p>⌘F opens document Find, ⌥⌘F opens Replace, and ⌘G / ⇧⌘G find the next/previous match. The toolbar magnifying glass also opens Find. A floating bar sits near the bottom of the text pane, clear of the navigation. Enabling Replace expands a second row upward, with current/all replacement, case matching and whole-word options. Only matches are highlighted; the document keeps its colors. Navigating to a folded match reveals it.</p>
+<p>Use View to increase, decrease or reset text size for the current editing mode. Code/Visual typography remains independent in Settings.</p>
+<h2 id="section-5">Images, data and paths</h2>
+<p>Import images or use ordinary links. The app does not automatically archive images, data or other dependencies into a project. Organize dependencies with relative paths such as <code>images/plot.png</code> and <code>data/input.csv</code>.</p>
+<p>Maintain references when saving into another folder. R starts in the document directory by default. If your code calls <code>setwd()</code>, use <code>getwd()</code> to check the actual directory.</p>
+<p>See <a href="syntax.html">Quarto Syntax</a> for examples.</p>
+<p>In Settings → Formatting, R formatting can follow the nearest <code>air.toml</code> or use custom line width, indentation and multiline-call preferences. The block button formats directly without moving the reading caret into code.</p>
+<h2 id="section-6">Highlighting and completion preferences</h2>
+<p>Fonts, Highlighting, Completion and Formatting are directly accessible in the settings toolbar. Default, Ocean, Forest and Warm palettes each adapt to light and dark appearances. Syntax colors, italic comments and bold keywords are optional. Code appearance always follows the interface light/dark appearance. Palettes apply to Code and Visual code blocks without changing the document source.</p>
+<p>Completion offers automatic suggestions, delay, minimum prefix length and candidate limits, plus separate parameter-name, signature and current-session-object options. Control-Space still works with automatic suggestions off. Turn off Return acceptance to retain newline behavior; Tab accepts and Esc dismisses. Session-object completion does not start R or execute the notebook.</p></main></body></html>

@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+.local/
+dist/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+.DS_Store
+*.dSYM

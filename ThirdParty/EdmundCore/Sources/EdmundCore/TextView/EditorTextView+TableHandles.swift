@@ -1,0 +1,1850 @@
+import AppKit
+
+// MARK: - Table row and column handles
+//
+// Two small ⋯ pills, after Apple Notes (misc/frontend-refs/notes-table-controls.png):
+// one lying above the active column, one standing to the left of the active row.
+// Clicking either selects that whole row or column (notes-table-row-selection-
+// by-pill.png, notes-table-col-selection-by-pill.png): the pill grows into a
+// filled tab flush against the selection box, and clicking its chevron (or
+// double-clicking the tab) opens the menu of add/delete operations. Dragging
+// either one moves its row or column (EditorTextView+TableReorder).
+//
+// "Active" means the caret's cell, not the pointer's. A handle you can only see
+// while hovering is one you have to already know about; a handle that appears
+// the moment you click into a table is on screen exactly when the operations it
+// offers make sense. It follows the caret from cell to cell.
+//
+// Both hang outside the table — the column pill in a band the header row
+// reserves above itself (`tableHandleBand`, held clear of the column borders by
+// the `.tableRow` decoration's `topInset`), the row pill in the left margin the
+// line numbers use. They draw on the background pass beside the numbers and the
+// `</>` button, which is also why they never disturb the text: that margin and
+// that band are space the text never occupies.
+//
+// This file also draws the other piece of table chrome, the box around a
+// multi-cell selection — see "Cell selection" below.
+
+/// Which handle, and what it acts on. The row and column indices are the ones
+/// the operations in EditorTextView+TableStructure take.
+struct TableHandle: Equatable {
+    enum Axis { case row, column }
+    let axis: Axis
+    let blockIndex: Int
+    let row: Int
+    let column: Int
+    let rect: NSRect
+    /// The tab a selected row or column wears, rather than the plain pill.
+    var selected = false
+    /// The rows (row axis) or columns (column axis) a selected tab stands
+    /// for — more than one once its selection has been dragged wider. Nil for
+    /// a plain pill, which stands for `row` or `column` alone.
+    var span: ClosedRange<Int>? = nil
+}
+
+/// A rectangular run of cells in one table.
+struct TableCellBlock: Equatable {
+    let blockIndex: Int
+    let rows: ClosedRange<Int>
+    let columns: ClosedRange<Int>
+}
+
+/// Whole rows or whole columns, selected through a pill.
+///
+/// Kept apart from `TableCellBlock` because the same block of cells means
+/// two different things depending on how it was reached: a drag across a
+/// full row is a block of cells, with no tab, while the pill's row is a row
+/// — and Notes draws the two differently. `ranges` is what was installed;
+/// the moment the selection is anything else, this no longer applies.
+struct TableAxisSelection: Equatable {
+    let axis: TableHandle.Axis
+    let block: TableCellBlock
+    /// The cell the caret was in when the pill was clicked. The pill on the
+    /// other axis stays at this cell, as Notes keeps it.
+    let anchorRow: Int
+    let anchorColumn: Int
+    let ranges: [NSRange]
+
+    /// The selected rows (row axis) or columns (column axis).
+    var span: ClosedRange<Int> { axis == .row ? block.rows : block.columns }
+}
+
+extension EditorTextView {
+
+    /// The pill's short side, its long side, and the air between it and the
+    /// table. `tableHandleBand` is the room the header row has to reserve above
+    /// itself for the column pill to have somewhere to be.
+    ///
+    /// Measured off the Notes reference at 2×: a 32×16 px pill, 8 px clear of
+    /// the table, its corner curving over ~5 px — a rounded rectangle, not a
+    /// capsule. The radius is the stroke's centreline, half a pixel inside.
+    /// All at the default body size; the instance values below scale them.
+    static let tableHandleBaseThickness: CGFloat = 8
+    static let tableHandleBaseLength: CGFloat = 16
+    static let tableHandleBaseGap: CGFloat = 4
+    static let tableHandleBaseRadius: CGFloat = 2.5
+    static let tableCellDotBaseRadius: CGFloat = 3.75
+    /// A selected row's or column's tab: 32 px thick on the Notes references
+    /// at 2×, twice the plain pill, and flush against the selection box.
+    static let tableHandleBaseSelectedThickness: CGFloat = 16
+    /// Its outer corners: an 8 px radius on the column reference at 2×.
+    static let tableHandleBaseSelectedRadius: CGFloat = 4
+    /// The selection box's stroke, centred on the box's edge.
+    static let tableCellSelectionLineWidth: CGFloat = 2
+
+    /// How much bigger than the default body size the text is — what View ▸
+    /// Zoom changes — so the table's chrome (pills, their gap and band, the
+    /// selection dots) grows and shrinks with the text instead of staying at
+    /// the size measured for 16pt. The `</>` button follows the code size
+    /// instead, like the line numbers it shares a margin with.
+    var tableChromeScale: CGFloat { theme.fontSize / EditorTheme.default.fontSize }
+    var tableHandleThickness: CGFloat { Self.tableHandleBaseThickness * tableChromeScale }
+    var tableHandleLength: CGFloat { Self.tableHandleBaseLength * tableChromeScale }
+    var tableHandleGap: CGFloat { Self.tableHandleBaseGap * tableChromeScale }
+    var tableHandleRadius: CGFloat { Self.tableHandleBaseRadius * tableChromeScale }
+    var tableHandleSelectedThickness: CGFloat {
+        Self.tableHandleBaseSelectedThickness * tableChromeScale
+    }
+    var tableHandleSelectedRadius: CGFloat { Self.tableHandleBaseSelectedRadius * tableChromeScale }
+    /// Room for the selected column's tab, which is thicker than the pill and
+    /// its gap together; reserved whether or not a column is selected, so that
+    /// selecting one never shifts the page.
+    var tableHandleBand: CGFloat {
+        max(tableHandleThickness + tableHandleGap, tableHandleSelectedThickness)
+    }
+    var tableCellDotRadius: CGFloat { Self.tableCellDotBaseRadius * tableChromeScale }
+
+    /// Ink for the pill's outline and its dots, as alpha on the label colour.
+    ///
+    /// Absolute, not a multiple of the table's own border: our grid is drawn far
+    /// lighter than Notes' (230/255 gray against its 190), so weighting the pill
+    /// against ours is what made it vanish. Notes puts its pill outline at 230
+    /// and its dots at 170 — and since the pill has to carry itself here without
+    /// a darker grid behind it, both go a step past that.
+    static let tableHandleOutlineAlpha: CGFloat = 0.22
+    static let tableHandleDotAlpha: CGFloat = 0.45
+
+    // MARK: - What the handles point at
+
+    /// The cell the caret is in, if it is in a table that is currently rendered.
+    /// Nil while the table shows its raw markdown — the pipes are visible then
+    /// and there is no grid to hang a handle off.
+    var activeTableCell: TableCellRef? {
+        guard !rawTableEditing else { return nil }
+        return tableCell(atRawOffset: selectedRange().location)
+    }
+
+    /// The row and column pills for the active cell, in view coordinates.
+    ///
+    /// None while a block of cells is selected: the pills point at one row and
+    /// one column, which is not what is selected then, and Notes takes them off
+    /// screen for the same reason. The selection box is the affordance.
+    ///
+    /// A row or column picked by its pill is the exception: its pill becomes
+    /// the selected tab, and the pill on the other axis stays at the cell the
+    /// caret was in, as in Notes.
+    func tableHandles() -> [TableHandle] {
+        if let selection = tableAxisSelection { return tableHandles(for: selection) }
+        guard tableCellSelection == nil, let cell = activeTableCell,
+              let grid = tableGrid(blockIndex: cell.blockIndex) else { return [] }
+        return [tablePill(.row, grid: grid, blockIndex: cell.blockIndex,
+                          row: cell.row, column: cell.column),
+                tablePill(.column, grid: grid, blockIndex: cell.blockIndex,
+                          row: cell.row, column: cell.column)].compactMap { $0 }
+    }
+
+    /// One plain pill, centred on its row or column.
+    private func tablePill(_ axis: TableHandle.Axis, grid: TableGrid, blockIndex: Int,
+                           row: Int, column: Int) -> TableHandle? {
+        guard grid.rows.indices.contains(row),
+              let cellRect = grid.cellRect(row: row, column: column),
+              let top = grid.rows.first?.minY else { return nil }
+        let thickness = tableHandleThickness
+        let length = tableHandleLength
+        let gap = tableHandleGap
+        switch axis {
+        case .row:
+            let rowRect = grid.rows[row]
+            // Clamped so a narrow window pins the row pill to the view's edge
+            // rather than sliding it off the left.
+            let rowX = max(0, (grid.columnEdges.first ?? 0) - gap - thickness)
+            return TableHandle(
+                axis: .row, blockIndex: blockIndex, row: row, column: column,
+                rect: NSRect(x: rowX, y: rowRect.midY - length / 2,
+                             width: thickness, height: min(length, rowRect.height)))
+        case .column:
+            return TableHandle(
+                axis: .column, blockIndex: blockIndex, row: row, column: column,
+                rect: NSRect(x: cellRect.midX - length / 2, y: top - gap - thickness,
+                             width: length, height: thickness))
+        }
+    }
+
+    /// The selected tab and the other axis's pill, for a row or column picked
+    /// by its pill.
+    private func tableHandles(for selection: TableAxisSelection) -> [TableHandle] {
+        let block = selection.block
+        guard let grid = tableGrid(blockIndex: block.blockIndex),
+              let box = tableCellBlockBox(block, grid: grid) else { return [] }
+        let thickness = tableHandleSelectedThickness
+        // The box's stroke straddles its edge, so the tab reaches half a
+        // stroke past either end to cover the stroke's outer half too.
+        let overhang = Self.tableCellSelectionLineWidth / 2
+        let rect: NSRect
+        switch selection.axis {
+        case .row:
+            // Flush against the box's left edge, as tall as the rows it
+            // selects. Clamped at the view's edge like the plain pill.
+            let x = max(0, box.minX - thickness)
+            rect = NSRect(x: x, y: box.minY - overhang, width: box.minX - x,
+                          height: box.height + 2 * overhang)
+        case .column:
+            // Flush on the box's top edge, in the band the header reserves.
+            rect = NSRect(x: box.minX - overhang, y: box.minY - thickness,
+                          width: box.width + 2 * overhang, height: thickness)
+        }
+        let tab = TableHandle(axis: selection.axis, blockIndex: block.blockIndex,
+                              row: block.rows.lowerBound, column: block.columns.lowerBound,
+                              rect: rect, selected: true, span: selection.span)
+        let other: TableHandle.Axis = selection.axis == .row ? .column : .row
+        let pill = tablePill(other, grid: grid, blockIndex: block.blockIndex,
+                             row: selection.anchorRow, column: selection.anchorColumn)
+        return [tab] + (pill.map { [$0] } ?? [])
+    }
+
+    // MARK: - Selecting a row or column
+
+    /// The row or column picked by a pill, while the selection is still
+    /// exactly what the pill installed.
+    var tableAxisSelection: TableAxisSelection? {
+        guard let state = tableAxisSelectionState, !rawTableEditing,
+              selectedRanges.map(\.rangeValue) == state.ranges else { return nil }
+        return state
+    }
+
+    /// Selects whole rows (`span` in line indices, row axis) or whole columns
+    /// (column axis) of a table, remembering `anchor` — the cell the pill on
+    /// the other axis stays at.
+    func selectTableAxis(_ axis: TableHandle.Axis, blockIndex: Int, span: ClosedRange<Int>,
+                         anchor: (row: Int, column: Int)) {
+        guard let lines = tableLines(blockIndex: blockIndex),
+              let header = lines.first else { return }
+        // Counted the way `tableCell` counts them, which is how the ranges
+        // below are found.
+        let columns = cellRanges(in: header as NSString).count
+        guard columns > 0 else { return }
+        let block: TableCellBlock
+        switch axis {
+        case .row:
+            block = TableCellBlock(blockIndex: blockIndex, rows: span, columns: 0...(columns - 1))
+        case .column:
+            block = TableCellBlock(blockIndex: blockIndex, rows: 0...(lines.count - 1),
+                                   columns: span)
+        }
+        let ranges = tableCellSelectionRanges(block)
+        guard !ranges.isEmpty else { return }
+        // Recorded before the selection goes in, so the selection change the
+        // install fires already finds it; then re-recorded with what actually
+        // went in, since a lone cell's range is trimmed to its text on the way.
+        tableAxisSelectionState = TableAxisSelection(
+            axis: axis, block: block, anchorRow: anchor.row, anchorColumn: anchor.column,
+            ranges: ranges.map(\.rangeValue))
+        setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
+        tableAxisSelectionState = TableAxisSelection(
+            axis: axis, block: block, anchorRow: anchor.row, anchorColumn: anchor.column,
+            ranges: selectedRanges.map(\.rangeValue))
+        invalidateTableHandles()
+        needsDisplay = true
+    }
+
+    /// A click on a plain pill: select its row or column.
+    func selectTableAxis(for handle: TableHandle) {
+        let span = handle.axis == .row ? handle.row...handle.row : handle.column...handle.column
+        selectTableAxis(handle.axis, blockIndex: handle.blockIndex, span: span,
+                        anchor: (handle.row, handle.column))
+    }
+
+    // MARK: - Drawing
+
+    /// Draws the handles, and places the overlay that draws the box around a
+    /// cell selection (`TableSelectionOverlay`, above the fragment views).
+    /// Called from `drawBackground(in:)`. The handles ride the pass's shared geometry (they
+    /// were already computed for the `</>` button's pill dodge); nil builds a
+    /// fresh set.
+    func drawTableHandles(in dirty: NSRect, chrome: MarginChromeGeometry? = nil) {
+        drawTableCellSelection(in: dirty)
+        drawTableReorder(in: dirty)
+        let handles = chrome?.handles ?? tableHandles()
+        // Where the pills are *on screen*, which is the only thing the next
+        // caret move can repaint away. `invalidateTableHandles` cannot be
+        // trusted to record it: it runs before the restyle a click triggers,
+        // and a grid that is briefly unavailable makes it record nothing at
+        // all — after which the pill it forgot outlives its own move.
+        //
+        // But don't let a *grid-unavailable* draw wipe the record: a click into
+        // a wrapped-cell table restyles it, and a repaint that lands before the
+        // rows are laid out again finds no grid, so `tableHandles()` is empty
+        // even though a pill is still on screen. Overwriting with `[]` then lost
+        // the band, and the pill lingered because the next caret move had
+        // nothing to invalidate. Keep the last record in that case; only replace
+        // it when the pill is genuinely gone (caret out of a cell, raw mode, or
+        // a cell block selected — all of which resolve without needing a grid).
+        let gridUnavailable = handles.isEmpty && !rawTableEditing
+            && (tableAxisSelection != nil
+                || (tableCellSelection == nil && activeTableCell != nil))
+        if !gridUnavailable {
+            lastTableHandleBands = handles.map { handleHitBox($0) }
+        }
+        for handle in handles where handle.rect.intersects(dirty) {
+            if handle.selected {
+                drawSelectedTableTab(handle)
+                continue
+            }
+            let hovered = handle == hoveredTableHandle
+            // Space, not a border, per the editor's chrome idiom — but a handle
+            // has to read as a target with no text beside it to anchor on, so it
+            // keeps a hairline outline and gains a fill only under the pointer.
+            let body = NSBezierPath(roundedRect: handle.rect,
+                                    xRadius: tableHandleRadius,
+                                    yRadius: tableHandleRadius)
+            (hovered ? NSColor.quaternaryLabelColor : NSColor.clear).setFill()
+            body.fill()
+            tableHandleInk(Self.tableHandleOutlineAlpha).setStroke()
+            // One device pixel, like the column borders it hangs off: a 1pt
+            // stroke reads as twice their weight on a Retina display.
+            body.lineWidth = 1 / (window?.backingScaleFactor ?? 1)
+            body.stroke()
+            drawHandleDots(handle)
+        }
+    }
+
+    /// The pill's ink. `labelColor` rather than the grid's gray so it inverts
+    /// with the appearance: on a dark background the pill has to lighten, not
+    /// darken.
+    private func tableHandleInk(_ alpha: CGFloat) -> NSColor {
+        NSColor.labelColor.withAlphaComponent(alpha)
+    }
+
+    /// Three dots along the pill's long axis, carrying the pill on their own —
+    /// its outline is a hint of a box, not a border.
+    private func drawHandleDots(_ handle: TableHandle) {
+        // With the pill, so the dots keep their place in it at every zoom.
+        let size: CGFloat = 1.5 * tableChromeScale
+        let spacing: CGFloat = 4 * tableChromeScale
+        tableHandleInk(Self.tableHandleDotAlpha).setFill()
+        for step in -1...1 {
+            let offset = CGFloat(step) * spacing
+            let center = handle.axis == .column
+                ? CGPoint(x: handle.rect.midX + offset, y: handle.rect.midY)
+                : CGPoint(x: handle.rect.midX, y: handle.rect.midY + offset)
+            NSBezierPath(ovalIn: NSRect(x: center.x - size / 2, y: center.y - size / 2,
+                                        width: size, height: size)).fill()
+        }
+    }
+
+    /// A selected row's or column's tab: accent-filled, rounded only on the
+    /// side away from the table (the other side stands on the selection box),
+    /// with white dots and a chevron that says it opens a menu — the row tab's
+    /// at its foot, the column tab's at its right end, as in Notes.
+    private func drawSelectedTableTab(_ handle: TableHandle) {
+        let rect = handle.rect
+        guard rect.width > 0, rect.height > 0 else { return }
+        let radius = min(tableHandleSelectedRadius, rect.width / 2, rect.height / 2)
+        // NSBezierPath rounds all four corners or none, so round a rect pushed
+        // past the table side by the radius and clip that overhang away.
+        var body = rect
+        switch handle.axis {
+        case .row:    body.size.width += radius
+        case .column: body.size.height += radius
+        }
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: rect).addClip()
+        accentColor.setFill()
+        NSBezierPath(roundedRect: body, xRadius: radius, yRadius: radius).fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let scale = tableChromeScale
+        let thickness = tableHandleSelectedThickness
+        let dot: CGFloat = 2 * scale
+        // As measured on the Notes references at 2x: 12 px apart on a column's
+        // tab, 11 on a row's, where a single-line row leaves less room.
+        let spacing: CGFloat = (handle.axis == .column ? 6 : 5.5) * scale
+        // 16 px across its stroke ends and 9 px tall on the reference at 2×.
+        let chevronWidth = 0.5 * thickness
+        let chevronHeight = 0.28 * thickness
+        NSColor.white.setFill()
+        NSColor.white.setStroke()
+
+        let dotCenters: [CGPoint]
+        let chevronCenter = selectedTabChevronCenter(handle)
+        switch handle.axis {
+        case .column:
+            dotCenters = (-1...1).map {
+                CGPoint(x: rect.midX + CGFloat($0) * spacing, y: rect.midY)
+            }
+        case .row:
+            // A row is often barely taller than the tab is wide, so the dots
+            // centre in what the chevron leaves of it rather than on the row.
+            let dotsMid = (rect.minY + chevronCenter.y - chevronHeight) / 2
+            dotCenters = (-1...1).map {
+                CGPoint(x: rect.midX, y: dotsMid + CGFloat($0) * spacing)
+            }
+        }
+        // Only what fits: a tab too short for both keeps the chevron, which is
+        // the part that says "click here".
+        // A row tab measures what the chevron leaves above it, the way Notes
+        // fits both in a single-line row.
+        let roomForDots = handle.axis == .column
+            ? rect.width >= 2 * (rect.maxX - chevronCenter.x) + 4 * spacing
+            : chevronCenter.y - chevronHeight - rect.minY >= 2 * spacing + dot
+        if roomForDots {
+            for center in dotCenters {
+                NSBezierPath(ovalIn: NSRect(x: center.x - dot / 2, y: center.y - dot / 2,
+                                            width: dot, height: dot)).fill()
+            }
+        }
+        // Flipped view: +y is down, so the chevron's point is its larger y.
+        let chevron = NSBezierPath()
+        chevron.move(to: CGPoint(x: chevronCenter.x - chevronWidth / 2,
+                                 y: chevronCenter.y - chevronHeight / 2))
+        chevron.line(to: CGPoint(x: chevronCenter.x, y: chevronCenter.y + chevronHeight / 2))
+        chevron.line(to: CGPoint(x: chevronCenter.x + chevronWidth / 2,
+                                 y: chevronCenter.y - chevronHeight / 2))
+        chevron.lineWidth = 1.5 * scale
+        chevron.lineCapStyle = .round
+        chevron.lineJoinStyle = .round
+        chevron.stroke()
+    }
+
+    /// How far in from a selected tab's far end its chevron's centre sits, as a
+    /// fraction of the tab's thickness: 22.5 px from a column tab's right end
+    /// and 14.5 px from a row tab's foot on the Notes references at 2×.
+    static func tableTabChevronInset(_ axis: TableHandle.Axis) -> CGFloat {
+        axis == .column ? 0.7 : 0.45
+    }
+
+    /// A selected tab's chevron centre: at the row tab's foot, the column
+    /// tab's right end.
+    func selectedTabChevronCenter(_ handle: TableHandle) -> CGPoint {
+        let rect = handle.rect
+        let inset = Self.tableTabChevronInset(handle.axis) * tableHandleSelectedThickness
+        return handle.axis == .column
+            ? CGPoint(x: rect.maxX - inset, y: rect.midY)
+            : CGPoint(x: rect.midX, y: rect.maxY - inset)
+    }
+
+    /// Where a single click opens a selected tab's menu: the square end of the
+    /// tab the chevron sits in, and nowhere else on it.
+    func selectedTabChevronBox(_ handle: TableHandle) -> NSRect {
+        let rect = handle.rect
+        let side = min(tableHandleSelectedThickness, handle.axis == .column ? rect.width : rect.height)
+        return handle.axis == .column
+            ? NSRect(x: rect.maxX - side, y: rect.minY, width: side, height: rect.height)
+            : NSRect(x: rect.minX, y: rect.maxY - side, width: rect.width, height: side)
+    }
+
+    /// `chromeLineColor` lives on the fragment's extension and is private there;
+    /// the handles want the same gray so a pill reads as part of the same grid
+    /// as the borders it hangs off.
+    private var tableChromeLineColor: NSColor {
+        NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? EditorTextView.darkRuleGray : NSColor.separatorColor
+    }
+
+    // MARK: - Cell selection
+    //
+    // A drag across cells selects whole cells, and is drawn as one square-
+    // cornered box around them rather than as a text highlight. Two reasons,
+    // both visible in the "before" screenshot: a text highlight runs to the
+    // *text container's* right edge on every line it fully covers, which in a
+    // table means a band hanging hundreds of points past the table's own edge;
+    // and a highlight that stops mid-cell doesn't say which cells a Copy will
+    // take. The box says exactly that, and the two dots on its corners drag it
+    // wider.
+    //
+    // The bleed is why the selection is installed as *one range per row* rather
+    // than as a single span: AppKit runs a highlight to the container's edge
+    // only on a line the selection covers through its newline, so a range that
+    // stops at the row's last selected cell never triggers it. That also makes
+    // the highlight cover exactly the columns the box is drawn around, and
+    // there is nothing left to suppress — `selectedTextAttributes` would not
+    // have been enough anyway, since AppKit ignores it for the unemphasized
+    // highlight it draws while the window is not key.
+
+    /// The block of cells the selection covers, when it covers more than one
+    /// cell of a single rendered table.
+    var tableCellSelection: TableCellBlock? { tableCellBlock(forRanges: selectedRanges) }
+
+    /// The block a set of selection ranges covers — the ranges as they are
+    /// about to be installed, which is what the highlight decision needs.
+    func tableCellBlock(forRanges ranges: [NSValue]) -> TableCellBlock? {
+        let spans = ranges.map(\.rangeValue)
+        guard let first = spans.first, let last = spans.last,
+              last.upperBound > 0 else { return nil }
+        return tableCellBlock(from: first.location, to: last.upperBound - 1)
+    }
+
+    /// Switches AppKit's text highlight off while a block of cells is selected.
+    /// Notes drops the text selection entirely at that point — the box is the
+    /// only marker — and a highlight here would say the wrong thing anyway,
+    /// since what is selected is cells, not a run of characters.
+    func setTableCellHighlight(suppressed: Bool) {
+        guard suppressed != tableCellHighlightSuppressed else { return }
+        // Read before the swap, never inside the ternary: the stored default is
+        // lazy, and evaluating it on the restoring call would capture the
+        // cleared attributes as "the default" and lose the highlight for good.
+        let restore = defaultSelectedTextAttributes
+        tableCellHighlightSuppressed = suppressed
+        selectedTextAttributes = suppressed ? [.backgroundColor: NSColor.clear] : restore
+    }
+
+    /// The block of cells a range covers, when it covers more than one cell of
+    /// a single rendered table.
+    func tableCellBlock(for range: NSRange) -> TableCellBlock? {
+        guard range.length > 0 else { return nil }
+        return tableCellBlock(from: range.location, to: range.upperBound - 1)
+    }
+
+    private func tableCellBlock(from: Int, to: Int) -> TableCellBlock? {
+        // A pipe belongs to the cell it opens, so a selection that reaches just
+        // past a cell's padding would otherwise read as spanning two cells and
+        // swallow the neighbour whole. The delimiter closing a cell counts as
+        // that cell's own end.
+        var to = to
+        let ns = rawSource as NSString
+        if to > from, to < ns.length, ns.character(at: to) == 0x7C { to -= 1 }
+        guard to >= from, !rawTableEditing,
+              let start = tableCell(atRawOffset: from),
+              let end = tableCell(atRawOffset: to),
+              start.blockIndex == end.blockIndex,
+              start.row != end.row || start.column != end.column else { return nil }
+        return TableCellBlock(blockIndex: start.blockIndex,
+                              rows: min(start.row, end.row)...max(start.row, end.row),
+                              columns: min(start.column, end.column)...max(start.column, end.column))
+    }
+
+    /// One range per row of the block, each running from the row's first
+    /// selected cell to its last — never over the newline that ends the row.
+    /// The separator row holds no cells and simply contributes none.
+    func tableCellSelectionRanges(_ block: TableCellBlock) -> [NSValue] {
+        let cells = tableCellRows(blockIndex: block.blockIndex, rows: block.rows)
+        return block.rows.compactMap { row in
+            guard block.columns.lowerBound >= 0, let line = cells[row],
+                  block.columns.upperBound < line.count else { return nil }
+            let first = line[block.columns.lowerBound], last = line[block.columns.upperBound]
+            return NSValue(range: NSRange(
+                location: first.contentRange.location,
+                length: last.contentRange.upperBound - first.contentRange.location))
+        }
+    }
+
+    /// The block the selection box is drawn around: a picked row or column —
+    /// which can be a single cell, in a one-column table — or a block of cells.
+    var tableSelectionBoxBlock: TableCellBlock? {
+        tableAxisSelection?.block ?? tableCellSelection
+    }
+
+    /// The box a cell selection is drawn in, in view coordinates.
+    func tableCellSelectionBox() -> NSRect? {
+        guard let block = tableSelectionBoxBlock,
+              let grid = tableGrid(blockIndex: block.blockIndex) else { return nil }
+        return tableCellBlockBox(block, grid: grid)
+    }
+
+    /// The box around a block of cells on an already-read grid. A column
+    /// wider than a short row still boxes to its last real column.
+    func tableCellBlockBox(_ block: TableCellBlock, grid: TableGrid) -> NSRect? {
+        let lastColumn = min(block.columns.upperBound, grid.columns - 1)
+        guard lastColumn >= block.columns.lowerBound,
+              let first = grid.cellRect(row: block.rows.lowerBound,
+                                        column: block.columns.lowerBound),
+              let last = grid.cellRect(row: block.rows.upperBound,
+                                       column: lastColumn) else { return nil }
+        return first.union(last)
+    }
+
+    /// Places the box around a cell, row or column selection. It is drawn by
+    /// `TableSelectionOverlay`, a view above the text, not in this background
+    /// pass: the table's borders are drawn by the layout fragments, which sit
+    /// above the background, so every border the box crossed drew over it
+    /// (plainly in dark mode, whose border gray is opaque).
+    private func drawTableCellSelection(in dirty: NSRect) {
+        // Triggered from this pass because it runs whenever the box can have
+        // moved. The view changes wait until the pass ends: AppKit does not
+        // allow adding a subview or changing a frame during display. One
+        // placement per run-loop turn however many passes run, none while
+        // there is no selection and no box showing, and in common modes so
+        // the box keeps up while the scroller knob is dragged.
+        guard !tableSelectionOverlayPending,
+              tableSelectionBoxBlock != nil || tableSelectionOverlay?.isHidden == false else { return }
+        tableSelectionOverlayPending = true
+        RunLoop.main.perform(inModes: [.common]) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.tableSelectionOverlayPending = false
+                self?.placeTableSelectionOverlay()
+            }
+        }
+    }
+
+    /// Moves, refills or hides the overlay to match the current selection.
+    func placeTableSelectionOverlay() {
+        guard let box = tableCellSelectionBox() else {
+            tableSelectionOverlay?.isHidden = true
+            return
+        }
+        let dots = tableCellSelectionDots(box)
+        let dotRadius = tableCellDotRadius, color = accentColor
+        let overlay = tableSelectionOverlay ?? {
+            let view = TableSelectionOverlay(frame: .zero)
+            tableSelectionOverlay = view
+            return view
+        }()
+        // Added once. The layer's zPosition, not the subview order, keeps it
+        // above the fragment views TextKit adds later, so placing it never
+        // re-adds it (a re-add invalidates the view and draws again).
+        if overlay.superview !== self { addSubview(overlay) }
+        let margin = max(Self.tableCellSelectionLineWidth, dotRadius) + 1
+        let frame = box.insetBy(dx: -margin, dy: -margin)
+        let inside = box.offsetBy(dx: -frame.minX, dy: -frame.minY)
+        let localDots = dots.map { NSPoint(x: $0.x - frame.minX, y: $0.y - frame.minY) }
+        guard overlay.isHidden || overlay.frame != frame || overlay.box != inside || overlay.dots != localDots
+                || overlay.dotRadius != dotRadius || overlay.color != color else { return }
+        overlay.frame = frame
+        overlay.box = inside
+        overlay.dots = localDots
+        overlay.dotRadius = dotRadius
+        overlay.color = color
+        overlay.isHidden = false
+        overlay.needsDisplay = true
+    }
+
+    /// 7.5pt across at the default size, measured off the Notes recording at
+    /// 2x (a 15px blob on a 4px stroke). See `tableCellDotRadius`.
+
+    /// The two drag dots. On a block of cells, top-left and bottom-right of
+    /// the box, the corners Notes puts them on — centred on the corner itself,
+    /// where the two lines of the box cross. On a picked row they sit at the
+    /// middle of its top and bottom edges, on a picked column at the middle of
+    /// its left and right ones: each can only grow along its own axis.
+    private func tableCellSelectionDots(_ box: NSRect) -> [NSPoint] {
+        switch tableAxisSelection?.axis {
+        case .row?:
+            return [NSPoint(x: box.midX, y: box.minY), NSPoint(x: box.midX, y: box.maxY)]
+        case .column?:
+            return [NSPoint(x: box.minX, y: box.midY), NSPoint(x: box.maxX, y: box.midY)]
+        case nil:
+            return [NSPoint(x: box.minX, y: box.minY), NSPoint(x: box.maxX, y: box.maxY)]
+        }
+    }
+
+    /// The cell a drag from one of the dots should hold fixed — the corner
+    /// opposite the one grabbed — or nil if the point is on neither dot.
+    func tableCellSelectionAnchor(at point: NSPoint)
+        -> (block: TableCellBlock, anchor: (row: Int, column: Int))? {
+        guard let block = tableSelectionBoxBlock, let box = tableCellSelectionBox() else { return nil }
+        let dots = tableCellSelectionDots(box)
+        let slack = tableCellDotRadius + 4
+        if NSRect(x: dots[0].x - slack, y: dots[0].y - slack,
+                  width: slack * 2, height: slack * 2).contains(point) {
+            return (block, (block.rows.upperBound, block.columns.upperBound))
+        }
+        if NSRect(x: dots[1].x - slack, y: dots[1].y - slack,
+                  width: slack * 2, height: slack * 2).contains(point) {
+            return (block, (block.rows.lowerBound, block.columns.lowerBound))
+        }
+        return nil
+    }
+
+    /// Runs the drag started on a selection dot. AppKit's own tracking loop
+    /// would anchor on the click point and start a fresh selection, so this
+    /// takes the gesture whole and keeps the opposite corner fixed. A picked
+    /// row or column grows only along its axis, and stays picked.
+    func trackTableCellSelection(from anchor: (row: Int, column: Int), blockIndex: Int) {
+        guard let window else { return }
+        let axisSelection = tableAxisSelection
+        var previous: (row: Int, column: Int)?
+        while let event = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            if event.type == .leftMouseUp { break }
+            let point = convert(event.locationInWindow, from: nil)
+            guard let now = tableCellPosition(at: point, blockIndex: blockIndex) else { continue }
+            // Most drag events stay in the same cell; reinstalling an
+            // unchanged selection costs a pass over every selected row.
+            if let previous, previous == now { continue }
+            previous = now
+            if let axisSelection {
+                let from = axisSelection.axis == .row ? anchor.row : anchor.column
+                let to = axisSelection.axis == .row ? now.row : now.column
+                selectTableAxis(axisSelection.axis, blockIndex: blockIndex,
+                                span: min(from, to)...max(from, to),
+                                anchor: (axisSelection.anchorRow, axisSelection.anchorColumn))
+            } else {
+                selectTableCells(blockIndex: blockIndex, from: anchor, to: now)
+            }
+        }
+    }
+
+    /// The cell of `blockIndex` under a view point, clamped into the table so a
+    /// drag that wanders outside it still extends to the nearest edge. Never
+    /// the separator row, which holds no text to select.
+    func tableCellPosition(at point: NSPoint, blockIndex: Int,
+                           ensuringLayout: Bool = false) -> (row: Int, column: Int)? {
+        guard let grid = tableGrid(blockIndex: blockIndex, ensuringLayout: ensuringLayout),
+              !grid.rows.isEmpty,
+              grid.columns > 0 else { return nil }
+        var row = grid.rows.firstIndex { point.y < $0.maxY } ?? grid.rows.count - 1
+        if row == 1 { row = point.y < grid.rows[1].midY ? 0 : 2 }
+        row = min(max(0, row), grid.rows.count - 1)
+        let edge = grid.columnEdges.firstIndex { point.x < $0 } ?? grid.columnEdges.count
+        return (row, min(max(0, edge - 1), grid.columns - 1))
+    }
+
+    /// The cell a point lands in, judged by the drawn grid rather than by the
+    /// character underneath it. The grid is the only authority on which cell
+    /// the user aimed at: a cell's padding is a single kerned glyph, and AppKit
+    /// splits that glyph's advance down the middle, so the far half of a cell's
+    /// pad hit-tests as the *next* cell's first character.
+    func tableCell(at point: NSPoint) -> TableCellRef? {
+        for i in tableBlocks(near: point) {
+            // Layout forced: this runs on the click paths, and the click has
+            // just restyled the block it landed in. See `tableGrid`.
+            guard let grid = tableGrid(blockIndex: i, ensuringLayout: true),
+                  let bounds = grid.bounds,
+                  bounds.contains(point),
+                  let position = tableCellPosition(at: point, blockIndex: i,
+                                                   ensuringLayout: true) else { continue }
+            return tableCell(blockIndex: i, row: position.row, column: position.column)
+        }
+        return nil
+    }
+
+    /// The tables that can hold `point`: the block under it, and its neighbours
+    /// for the bands a grid reaches past its own rows. Found through the
+    /// fragment at the point — which is on screen, so laid out — because
+    /// forcing layout on every table instead lays out the whole document up
+    /// to the last one: seconds per drag event on a large file.
+    private func tableBlocks(near point: NSPoint) -> [Int] {
+        guard let tlm = textLayoutManager,
+              let fragment = tlm.textLayoutFragment(
+                  for: CGPoint(x: point.x - textContainerOrigin.x,
+                               y: point.y - textContainerOrigin.y)),
+              let index = blockIndexForRawOffset(
+                  tlm.offset(from: tlm.documentRange.location,
+                             to: fragment.rangeInElement.location))
+        else { return [] }
+        return [index - 1, index, index + 1].filter {
+            $0 >= 0 && $0 < blocks.count && blocks[$0].kind == .table
+        }
+    }
+
+    /// Where a click at `point` should leave the caret, or nil to keep the
+    /// offset AppKit chose.
+    ///
+    /// Two corrections, in order. First the offset is pulled back into the cell
+    /// the click actually landed in — AppKit's midpoint rule on a pad glyph
+    /// hundreds of points wide can otherwise carry it clean over a drawn
+    /// border into the next cell, which no click inside a cell should ever do.
+    /// Then it comes back to the text, as below.
+    func tableCellCaretSnap(at point: NSPoint, offset: Int) -> Int? {
+        guard !rawTableEditing else { return nil }
+        guard let cell = tableCell(at: point) else { return tableCellCaretSnap(offset) }
+        let clamped = min(max(offset, cell.contentRange.location), cell.contentRange.upperBound)
+        let snapped = tableCellCaretSnap(clamped) ?? clamped
+        return snapped == offset ? nil : snapped
+    }
+
+    /// Where a click that landed in a cell's trailing padding should really put
+    /// the caret, or nil when it landed on the text already.
+    ///
+    /// A column pads its cells by hanging a `.kern` on the cell's last
+    /// character, so that one space can be hundreds of points wide. AppKit
+    /// hit-tests it like any other glyph: click past its midpoint and the caret
+    /// goes to the far side, which draws it out in the middle of the empty part
+    /// of the cell rather than against the text it belongs to. Landing one
+    /// space in from the end also means typing fills the cell without eating
+    /// the space before its closing pipe.
+    ///
+    /// Click-only, deliberately: it would trap a Right-arrow that is legitimately
+    /// walking out of the cell.
+    func tableCellCaretSnap(_ offset: Int) -> Int? {
+        guard !rawTableEditing else { return nil }
+        // A pipe belongs to the cell it *opens*, so an offset sitting at one
+        // cell's very end resolves to the next one. Step back a character to
+        // get the cell whose padding the caret is really standing in.
+        var found = tableCell(atRawOffset: offset)
+        if found.map({ offset < $0.contentRange.location }) ?? true, offset > 0 {
+            found = tableCell(atRawOffset: offset - 1)
+        }
+        guard let cell = found,
+              offset >= cell.contentRange.location,
+              offset <= cell.contentRange.upperBound else { return nil }
+        let ns = rawSource as NSString
+        var textEnd = cell.contentRange.upperBound
+        while textEnd > cell.contentRange.location, ns.character(at: textEnd - 1) == 0x20 {
+            textEnd -= 1
+        }
+        // An all-blank cell keeps one space, the same rule `selectCellText` uses.
+        let target = max(textEnd, min(cell.contentRange.location + 1,
+                                      cell.contentRange.upperBound))
+        return offset > target ? target : nil
+    }
+
+    /// Whether a double-click's selection is worth keeping. It is only worth
+    /// keeping if it is text belonging to the cell the click landed in.
+    ///
+    /// A double-click in a cell's padding has no word to take: the pad is one
+    /// kerned space, and beside it sits the row's hidden pipe. AppKit selects
+    /// one of those, and a one-character selection of an invisible glyph draws
+    /// exactly like a caret stranded in the middle of the cell — while a ⌘C
+    /// then copies a delimiter. Neither is a selection the user asked for.
+    func tableCellSelectionIsJunk(_ selection: NSRange, at point: NSPoint) -> Bool {
+        guard selection.length > 0, !rawTableEditing,
+              let cell = tableCell(at: point) else { return false }
+        if selection.location < cell.contentRange.location
+            || selection.upperBound > cell.contentRange.upperBound { return true }
+        return (rawSource as NSString).substring(with: selection)
+            .allSatisfy { $0 == " " || $0 == "|" }
+    }
+
+    /// Where a caret that has come to rest on a table's hidden pipe should go
+    /// instead, or nil when it is resting somewhere legitimate.
+    ///
+    /// A pipe is drawn clear and at a hidden font, and it carries half of its
+    /// column's padding as kern — so a caret sitting on one appears to float in
+    /// the very middle of the cell's blank space, and typing there lands
+    /// outside any cell's content. No caret should ever rest there, whatever
+    /// put it there: a click, an arrow, or a selection AppKit fixed up after an
+    /// edit. Which way it was heading decides where it goes — backwards to the
+    /// text it just left, forwards to the text it was reaching for — so this
+    /// never traps an arrow key mid-row.
+    /// The caret positions a cell allows: from just before its first visible
+    /// character to just after its last. An all-blank cell keeps a single
+    /// position one space in, the rule `selectCellText` uses so typing keeps
+    /// `|  |` padded as it fills.
+    func tableCellLiveRange(_ cell: TableCellRef) -> (lower: Int, upper: Int) {
+        let text = tableCellTextRange(cell)
+        guard text.length > 0 else {
+            let p = min(cell.contentRange.location + 1, cell.contentRange.upperBound)
+            return (p, p)
+        }
+        return (text.location, text.upperBound)
+    }
+
+    /// Where a caret at `offset` should really rest, or nil when it is already
+    /// on a cell's text. A caret must never sit in the padding a row keeps
+    /// around its pipes, nor on a pipe — before *or* after it — whatever put it
+    /// there: a click, an arrow, or a selection AppKit fixed up after an edit.
+    ///
+    /// A click lands on the text of the cell it hit: the point already chose the
+    /// cell, so a pad position snaps to that cell's near edge and never crosses
+    /// into a neighbour. An arrow has a direction — `previous` is where the
+    /// caret came from — so a pad position moves the way the caret was heading,
+    /// to the next cell's text going forward or the previous cell's going back,
+    /// stepping over the dead run of pad, pipe and pad in one press.
+    func tableCellCaretResting(_ offset: Int, from previous: Int) -> Int? {
+        guard !rawTableEditing, offset >= 0,
+              let cell = tableCell(atRawOffset: offset) else { return nil }
+        let live = tableCellLiveRange(cell)
+        if offset >= live.lower && offset <= live.upper { return nil }
+        let isClick = tableClickPoint != nil
+        let forward = previous <= offset
+        if offset < live.lower {
+            // Leading pad, or the pipe that opens this cell.
+            if isClick || forward { return live.lower }
+            if let prev = tableCell(blockIndex: cell.blockIndex, row: cell.row,
+                                    column: cell.column - 1) {
+                return tableCellLiveRange(prev).upper
+            }
+            return live.lower
+        }
+        // Trailing pad, or the pipe that closes this cell.
+        if isClick || !forward { return live.upper }
+        if let next = tableCell(blockIndex: cell.blockIndex, row: cell.row,
+                                column: cell.column + 1) {
+            return tableCellLiveRange(next).lower
+        }
+        return live.upper
+    }
+
+    /// The cell a click landed in without landing on its text, or nil when it
+    /// landed on the text or outside a table.
+    ///
+    /// The cell comes from the grid when the grid can supply one, and from the
+    /// offset AppKit hit when it cannot. That fallback is not belt-and-braces:
+    /// in a real document the grid lookup returns nothing for the block under
+    /// the pointer often enough that it cannot be the only route, while the
+    /// offset route demonstrably resolves the same pad correctly — it is what
+    /// the caret correction has been running on all along.
+    ///
+    /// Then "did it land on the text": an offset outside the cell's text is out
+    /// in the padding, whichever side. An offset inside it is on the text
+    /// unless the pointer is past the text's drawn box, which catches the pad
+    /// glyph AppKit rounds back onto the last character.
+    func tableCellEmptySpace(at point: NSPoint, hit: Int?) -> TableCellRef? {
+        guard !rawTableEditing,
+              let cell = tableCell(at: point) ?? hit.flatMap(tableCellHoldingOffset)
+        else { return nil }
+        let text = tableCellTextRange(cell)
+        guard let hit, hit >= text.location, hit < text.upperBound else { return cell }
+        guard let box = tableCellTextBox(text) else { return nil }
+        return point.x > box.maxX + 1 ? cell : nil
+    }
+
+    /// Why the grid did or did not resolve a cell for a point — named rather
+    /// than inferred, because a log of a real click could not say otherwise and
+    /// a synthesised one does not reproduce the failure. Read under the verbose
+    /// trace; every branch is a guard in `tableGrid` or `tableCell(at:)`.
+    func tableGridDiagnostic(at point: NSPoint, hit: Int?) -> String {
+        guard let hit, let index = blockIndexForRawOffset(hit) else { return "noBlock" }
+        guard index < blocks.count else { return "badIndex" }
+        guard blocks[index].kind == .table else { return "notTable" }
+        guard let grid = tableGrid(blockIndex: index) else { return "noGrid" }
+        guard let bounds = grid.bounds else { return "noBounds" }
+        guard bounds.contains(point) else {
+            return "outside(x\(Int(bounds.minX))-\(Int(bounds.maxX))"
+                + ",y\(Int(bounds.minY))-\(Int(bounds.maxY)))"
+        }
+        guard let position = tableCellPosition(at: point, blockIndex: index) else {
+            return "noPosition(rows\(grid.rows.count),cols\(grid.columns))"
+        }
+        return tableCell(blockIndex: index, row: position.row, column: position.column) == nil
+            ? "noCell(r\(position.row)c\(position.column))"
+            : "ok(r\(position.row)c\(position.column))"
+    }
+
+    /// The cell an offset stands in, padding included. A pipe belongs to the
+    /// cell it *opens*, so an offset sitting at one cell's very end resolves to
+    /// the next one — step back a character to get the cell whose padding the
+    /// pointer is really in. The same rule `tableCellCaretSnap` uses.
+    private func tableCellHoldingOffset(_ offset: Int) -> TableCellRef? {
+        var found = tableCell(atRawOffset: offset)
+        if found.map({ offset < $0.contentRange.location }) ?? true, offset > 0 {
+            found = tableCell(atRawOffset: offset - 1)
+        }
+        guard let cell = found, offset >= cell.contentRange.location,
+              offset <= cell.contentRange.upperBound else { return nil }
+        return cell
+    }
+
+    /// The drawn box of a range, in view coordinates, or nil when it has no
+    /// laid-out extent.
+    private func tableCellTextBox(_ range: NSRange) -> NSRect? {
+        guard range.length > 0, let tlm = textLayoutManager,
+              let from = tlm.location(tlm.documentRange.location, offsetBy: range.location),
+              let to = tlm.location(tlm.documentRange.location, offsetBy: range.upperBound),
+              let textRange = NSTextRange(location: from, end: to) else { return nil }
+        let origin = textContainerOrigin
+        var box: NSRect?
+        tlm.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, frame, _, _ in
+            let rect = frame.offsetBy(dx: origin.x, dy: origin.y)
+            box = box.map { $0.union(rect) } ?? rect
+            return true
+        }
+        return box
+    }
+
+    /// A selection trimmed to the text of the cell it lies in, or nil when it
+    /// is already clean or is not a single cell's selection.
+    ///
+    /// Dragging across a cell's padding sweeps up the pad's kerned space and
+    /// the row's hidden pipe: invisible characters, so the highlight looks like
+    /// it covers blank space, and a ⌘C takes a delimiter into the clipboard.
+    /// A selection that spans cells is not this — the block logic turns that
+    /// into whole cells — so only a selection inside one cell is trimmed.
+    func tableCellSelectionTrimmed(_ range: NSRange) -> NSRange? {
+        guard range.length > 0, !rawTableEditing,
+              tableCellBlock(for: range) == nil,
+              let cell = tableCell(atRawOffset: range.location) else { return nil }
+        let ns = rawSource as NSString
+        var start = max(range.location, cell.contentRange.location)
+        var end = min(range.upperBound, cell.contentRange.upperBound)
+        // The pad is trailing spaces; the pipe is already outside `contentRange`.
+        while end > start, ns.character(at: end - 1) == 0x20 { end -= 1 }
+        while start < end, ns.character(at: start) == 0x20 { start += 1 }
+        let trimmed = NSRange(location: start, length: max(0, end - start))
+        return trimmed == range ? nil : trimmed
+    }
+
+    /// The block a drag from one point to another covers, or nil when the drag
+    /// has not left the cell it started in and is an ordinary text selection.
+    ///
+    /// Geometry, not offsets. A selection's character range is linear, so a
+    /// diagonal drag runs through everything between its two ends — drag from
+    /// a header cell down into the row below and the range sweeps the whole
+    /// rest of the header on its way, which read as "the header row, every
+    /// column" and flashed the box out to the table's full width before it
+    /// settled. Two points name two cells, and the rectangle between them is
+    /// the only thing a drag across a grid can mean.
+    func tableCellBlock(fromPoint: NSPoint, toPoint: NSPoint) -> TableCellBlock? {
+        guard !rawTableEditing, let anchor = tableCell(at: fromPoint),
+              let start = tableCellPosition(at: fromPoint, blockIndex: anchor.blockIndex),
+              let end = tableCellPosition(at: toPoint, blockIndex: anchor.blockIndex),
+              start != end else { return nil }
+        return TableCellBlock(
+            blockIndex: anchor.blockIndex,
+            rows: min(start.row, end.row)...max(start.row, end.row),
+            columns: min(start.column, end.column)...max(start.column, end.column))
+    }
+
+    /// Selects every cell between two positions.
+    func selectTableCells(blockIndex: Int,
+                          from: (row: Int, column: Int), to: (row: Int, column: Int)) {
+        let block = TableCellBlock(
+            blockIndex: blockIndex,
+            rows: min(from.row, to.row)...max(from.row, to.row),
+            columns: min(from.column, to.column)...max(from.column, to.column))
+        let ranges = tableCellSelectionRanges(block)
+        guard !ranges.isEmpty else { return }
+        setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
+    }
+
+    /// Repaints when a cell selection appears, changes or goes. Called on every
+    /// selection change, drag ticks included.
+    ///
+    /// It repaints the whole view rather than the box's band, and keys off the
+    /// selection rather than off `tableCellSelectionBox()`, because the box
+    /// needs the grid and the grid needs laid-out fragments — which the block
+    /// does not have at the instant the selection changes and restyles it. A
+    /// box invalidated from a nil rect never repaints, and what reaches the
+    /// screen is whatever slice of it some later, unrelated repaint happens to
+    /// cover.
+    func updateTableCellSelectionChrome() {
+        let active = tableSelectionBoxBlock != nil
+        guard active || tableCellSelectionWasActive else { return }
+        tableCellSelectionWasActive = active
+        needsDisplay = true
+    }
+
+    // MARK: - Pointer
+
+    /// A generous hit box: the pill is small chrome in empty space, so the slack
+    /// costs nothing — except on the side facing the table, where it would
+    /// cost a click. The pill sits `tableHandleGap` clear of the table, so
+    /// slack wider than the gap reaches into the first column (or the header
+    /// row), and a click a couple of points inside a narrow column would select
+    /// the pill's row or column instead of putting the caret in the cell it
+    /// landed in.
+    func handleHitBox(_ handle: TableHandle) -> NSRect {
+        var box = handle.rect.insetBy(dx: -6, dy: -6)
+        // A selected tab stands right on the table's edge, with no gap to
+        // spend: its box stops where the tab does.
+        let reach = handle.selected ? 0 : tableHandleGap
+        switch handle.axis {
+        case .row:
+            box.size.width = handle.rect.maxX + reach - box.minX
+        case .column:
+            // Flipped coordinates: the table is below the column pill.
+            box.size.height = handle.rect.maxY + reach - box.minY
+        }
+        return box
+    }
+
+    func tableHandleHit(at event: NSEvent) -> TableHandle? {
+        let point = convert(event.locationInWindow, from: nil)
+        return tableHandles().first { handleHitBox($0).contains(point) }
+    }
+
+    /// Recomputes which handle the pointer is over. Called from `mouseMoved`
+    /// beside the `</>` button's own hover tracking, riding the same shared
+    /// geometry; nil builds a fresh set.
+    func updateTableHandleHover(at point: NSPoint,
+                                chrome: MarginChromeGeometry? = nil) {
+        let hit = (chrome?.handles ?? tableHandles()).first { handleHitBox($0).contains(point) }
+        guard hit != hoveredTableHandle else { return }
+        if let old = hoveredTableHandle { setNeedsDisplay(handleHitBox(old)) }
+        if let hit { setNeedsDisplay(handleHitBox(hit)) }
+        hoveredTableHandle = hit
+    }
+
+    /// Repaints the bands the handles live in — where they are going and where
+    /// they have been. Called on every caret move and whenever a pill picks a
+    /// row or column, since the handles follow the active cell or the picked
+    /// row or column.
+    ///
+    /// It does not record anything: `drawTableHandles` is the one writer of
+    /// `lastTableHandleBands`, because only a draw knows what actually reached
+    /// the screen.
+    func invalidateTableHandles() {
+        for band in tableHandles().map({ handleHitBox($0) }) + lastTableHandleBands {
+            setNeedsDisplay(band)
+        }
+    }
+
+    // MARK: - Menus
+
+    /// The menu a handle opens.
+    func tableHandleMenu(_ handle: TableHandle) -> NSMenu {
+        let menu = NSMenu()
+        // Every item's enablement is decided by the operation's own guard, so
+        // AppKit must not second-guess it: auto-enabling asks the responder
+        // chain to validate a selector it does not know and greys the lot.
+        menu.autoenablesItems = false
+        // Nothing may add to this menu but the operations below. It carried an
+        // "Edit as Markdown" item until the `</>` button became reachable while
+        // a cell is being edited, which is a better home for the same command.
+        menu.allowsContextMenuPlugIns = false
+        addTableItems(to: menu, blockIndex: handle.blockIndex,
+                      row: handle.row, column: handle.column, axis: handle.axis,
+                      span: handle.span)
+        return menu
+    }
+
+    /// Row and/or column operations for one cell. `axis` nil gives both, which
+    /// is what the cell context menu wants. `span` is the run of rows or
+    /// columns a selected tab stands for: the adds go either side of the whole
+    /// run and Delete takes all of it.
+    func addTableItems(to menu: NSMenu, blockIndex: Int, row: Int, column: Int,
+                       axis: TableHandle.Axis?, span: ClosedRange<Int>? = nil) {
+        func item(_ title: String, _ op: TableOperation, enabled: Bool = true) {
+            let entry = NSMenuItem(title: title,
+                                   action: #selector(performTableOperation(_:)),
+                                   keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = op
+            entry.isEnabled = enabled
+            menu.addItem(entry)
+        }
+        if axis != .column {
+            let rows = axis == .row ? (span ?? row...row) : row...row
+            // The separator is never a row of its own, so a run reaching over it
+            // counts one row fewer than its line span.
+            let many = rows.filter { $0 != 1 }.count > 1
+            // Row 1 is the separator and is never a handle's row, so the only
+            // row that cannot take one above it is none.
+            item("Add Row Above", TableOperation(.insertRow, blockIndex, rows.lowerBound, column))
+            item("Add Row Below", TableOperation(.insertRow, blockIndex,
+                                                 rows.upperBound == 0 ? 2 : rows.upperBound + 1,
+                                                 column))
+            // A divider sets the destructive Delete apart from the two adds.
+            menu.addItem(.separator())
+            item(many ? "Delete Rows" : "Delete Row",
+                 TableOperation(.deleteRow, blockIndex, rows.lowerBound, column,
+                                through: rows.upperBound),
+                 enabled: rows.contains { canDeleteTableRow(blockIndex: blockIndex, row: $0) })
+        }
+        if axis == nil { menu.addItem(.separator()) }
+        if axis != .row {
+            let columns = axis == .column ? (span ?? column...column) : column...column
+            item("Add Column Before", TableOperation(.insertColumn, blockIndex, row,
+                                                     columns.lowerBound))
+            item("Add Column After", TableOperation(.insertColumn, blockIndex, row,
+                                                    columns.upperBound + 1))
+            menu.addItem(.separator())
+            // At least one column has to survive.
+            item(columns.count > 1 ? "Delete Columns" : "Delete Column",
+                 TableOperation(.deleteColumn, blockIndex, row, columns.lowerBound,
+                                through: columns.upperBound),
+                 enabled: canDeleteTableColumn(blockIndex: blockIndex, column: columns.lowerBound)
+                    && columns.count < tableColumnCount(blockIndex: blockIndex))
+        }
+    }
+
+    @objc func performTableOperation(_ sender: NSMenuItem) {
+        guard let op = sender.representedObject as? TableOperation else { return }
+        if window?.firstResponder !== self { window?.makeFirstResponder(self) }
+        switch op.kind {
+        case .insertRow:
+            insertTableRow(blockIndex: op.blockIndex, at: op.row, column: op.column)
+        case .deleteRow:
+            deleteTableRows(blockIndex: op.blockIndex,
+                            rows: op.row...max(op.row, op.through ?? op.row), column: op.column)
+        case .insertColumn:
+            insertTableColumn(blockIndex: op.blockIndex, at: op.column, row: op.row)
+        case .deleteColumn:
+            deleteTableColumns(blockIndex: op.blockIndex,
+                               columns: op.column...max(op.column, op.through ?? op.column),
+                               row: op.row)
+        }
+    }
+
+    /// Opens a handle's menu at the pill.
+    /// `corner`, in view coordinates, is where the menu's top-left goes; by
+    /// default the handle's bottom-left.
+    func showTableHandleMenu(_ handle: TableHandle, at corner: NSPoint? = nil) {
+        if window?.firstResponder !== self { window?.makeFirstResponder(self) }
+        // Popped with no view, in screen coordinates. A menu shown *in* a text
+        // view is handed to the text system on its way to the screen, which
+        // adds AutoFill and Shortcuts entries of its own — reasonable in a text
+        // field's context menu, meaningless in a list of table operations. With
+        // no view there is nothing in the chain left to contribute them.
+        let corner = corner ?? NSPoint(x: handle.rect.minX, y: handle.rect.maxY)
+        let onScreen = window?.convertPoint(toScreen: convert(corner, to: nil)) ?? corner
+        tableHandleMenu(handle).popUp(positioning: nil, at: onScreen, in: nil)
+    }
+}
+
+/// One add/delete, carried on the menu item that performs it.
+final class TableOperation: NSObject {
+    enum Kind { case insertRow, deleteRow, insertColumn, deleteColumn }
+    let kind: Kind
+    let blockIndex: Int
+    let row: Int
+    let column: Int
+    /// A delete's last row or column, when it takes a run of them.
+    let through: Int?
+
+    init(_ kind: Kind, _ blockIndex: Int, _ row: Int, _ column: Int, through: Int? = nil) {
+        self.kind = kind
+        self.blockIndex = blockIndex
+        self.row = row
+        self.column = column
+        self.through = through
+    }
+}
+
+// MARK: - Accessibility
+//
+// The pills and the selected tab are drawn, not views, so VoiceOver has
+// nothing to land on. Each visible one gets a button element among the text
+// view's children (see `accessibilityChildren`), as the code copy button does:
+// a pill's press picks its row or column, a tab's opens its menu. Reordering
+// stays pointer-only; the menu's adds and deletes do not.
+
+extension EditorTextView {
+
+    /// One element per visible handle, reused by axis so VoiceOver's focus
+    /// survives a redraw; its label and frame follow the handle.
+    func tableHandleAccessibilityButtons() -> [TableHandleElement] {
+        let handles = tableHandles()
+        tableHandleElements = tableHandleElements.filter { axis, _ in
+            handles.contains { $0.axis == axis }
+        }
+        return handles.map { handle in
+            let element = tableHandleElements[handle.axis] ?? TableHandleElement(editor: self)
+            tableHandleElements[handle.axis] = element
+            element.handle = handle
+            return element
+        }
+    }
+
+    /// What an accessibility press on `handle` does, while it is still the
+    /// handle on screen: pick the row or column, or open the tab's menu at
+    /// its chevron.
+    func pressTableHandle(_ handle: TableHandle) -> Bool {
+        guard let current = tableHandles().first(where: { $0.axis == handle.axis }) else {
+            return false
+        }
+        if current.selected {
+            let chevron = selectedTabChevronBox(current)
+            showTableHandleMenu(current, at: NSPoint(x: chevron.minX, y: current.rect.maxY))
+        } else {
+            selectTableAxis(for: current)
+        }
+        return true
+    }
+}
+
+/// A row or column pill, or a selected tab, as VoiceOver sees it.
+public final class TableHandleElement: NSAccessibilityElement {
+    private weak var editor: EditorTextView?
+    var handle: TableHandle? {
+        didSet {
+            guard let handle else { return }
+            let axis = handle.axis == .row ? "Row" : "Column"
+            // Numbered as a reader counts them: the header (line 0) is row 1,
+            // and the separator (line 1) is not a row, so line n is row n.
+            let number = handle.axis == .row ? max(1, handle.row) : handle.column + 1
+            setAccessibilityLabel(handle.selected ? "\(axis) \(number) Options"
+                                                  : "Select \(axis) \(number)")
+        }
+    }
+
+    init(editor: EditorTextView) {
+        self.editor = editor
+        super.init()
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityParent(editor)
+    }
+
+    // AppKit calls accessibility on the main thread; the class isn't annotated.
+
+    /// In screen coordinates, from the view each time (see
+    /// `CodeCopyButtonElement.accessibilityFrame`).
+    public override func accessibilityFrame() -> NSRect {
+        let editor = editor, rect = handle?.rect ?? .zero
+        return MainActor.assumeIsolated {
+            editor.map { NSAccessibility.screenRect(fromView: $0, rect: rect) } ?? .zero
+        }
+    }
+
+    public override func accessibilityPerformPress() -> Bool {
+        let editor = editor, handle = handle
+        return MainActor.assumeIsolated {
+            guard let editor, let handle else { return false }
+            return editor.pressTableHandle(handle)
+        }
+    }
+}
+
+/// The box around a table cell selection and its two drag dots, in a view of
+/// its own so it draws above the layout fragments that draw the table's
+/// borders. Sized to the box, not the text view, so its backing store stays
+/// small. Clicks pass through to the text view, which hit-tests the dots.
+final class TableSelectionOverlay: NSView {
+    var box = NSRect.zero
+    var dots: [NSPoint] = []
+    var dotRadius: CGFloat = 0
+    var color = NSColor.controlAccentColor
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(false)
+        // Above its siblings whatever their order, so TextKit adding fragment
+        // views after it doesn't bury it.
+        wantsLayer = true
+        layer?.zPosition = 100
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Square corners, and the stroke centred on the box's own edge rather
+        // than inset within it: the box stands *on* the cell borders, so it
+        // reads as those borders thickening rather than as a second rectangle
+        // drawn just inside them. A radius would leave a gap at every corner it
+        // shares with them.
+        color.setStroke()
+        let path = NSBezierPath(rect: box)
+        path.lineWidth = EditorTextView.tableCellSelectionLineWidth
+        path.stroke()
+        color.setFill()
+        for point in dots {
+            NSBezierPath(ovalIn: NSRect(x: point.x - dotRadius, y: point.y - dotRadius,
+                                        width: dotRadius * 2, height: dotRadius * 2)).fill()
+        }
+    }
+}
+
+#if DEBUG
+extension EditorTextView {
+
+    /// Harness hooks (ReproScript). Both drive the menus the way a click does —
+    /// the handle one through its own hit test, the cell one through
+    /// `menu(for:)` — so a screenshot shows what a user would get rather than
+    /// what the menu builders would produce in isolation. `popUp` runs its own
+    /// event loop, so these do not return until the menu is dismissed.
+    /// Snapshots a menu's items once it is actually on screen, then dismisses
+    /// it. Anything the text system contributes is added as the menu is
+    /// displayed, so a menu that has only been *built* proves nothing.
+    private final class MenuProbe: NSObject, NSMenuDelegate {
+        var titles: [String] = []
+        func menuWillOpen(_ menu: NSMenu) {
+            DispatchQueue.main.async {
+                self.titles = menu.items.map(\.title)
+                menu.cancelTracking()
+            }
+        }
+    }
+
+    /// Pops a handle's menu and reports what was on it while it was open.
+    public func debugTableHandleMenuItems(column wantsColumn: Bool) -> String {
+        let axis: TableHandle.Axis = wantsColumn ? .column : .row
+        guard let handle = tableHandles().first(where: { $0.axis == axis }) else {
+            return "no \(wantsColumn ? "column" : "row") handle"
+        }
+        let menu = tableHandleMenu(handle)
+        let probe = MenuProbe()
+        menu.delegate = probe
+        let corner = NSPoint(x: handle.rect.minX, y: handle.rect.maxY)
+        let onScreen = window?.convertPoint(toScreen: convert(corner, to: nil)) ?? corner
+        menu.popUp(positioning: nil, at: onScreen, in: nil)
+        return "items=\(probe.titles)"
+    }
+
+    public func debugOpenTableHandleMenu(column wantsColumn: Bool) -> String {
+        let axis: TableHandle.Axis = wantsColumn ? .column : .row
+        guard let handle = tableHandles().first(where: { $0.axis == axis }),
+              let event = debugMouseEvent(at: NSPoint(x: handle.rect.midX,
+                                                      y: handle.rect.midY)) else {
+            return "no \(wantsColumn ? "column" : "row") handle"
+        }
+        guard let hit = tableHandleHit(at: event) else {
+            return "handle missed its own hit box at \(handle.rect)"
+        }
+        let report = "rect=\(hit.rect) row=\(hit.row) col=\(hit.column)"
+        showTableHandleMenu(hit)
+        return report
+    }
+
+    /// Clicks a row or column handle through the real `mouseDown` — at its
+    /// centre, or at a selected tab's chevron — so a script picks a row or
+    /// column, or opens the tab's menu, as a pointer would. A menu that opens
+    /// is modal: nothing after this runs until it is dismissed.
+    public func debugClickTableHandle(column wantsColumn: Bool, chevron: Bool,
+                                      clicks: Int) -> String {
+        let axis: TableHandle.Axis = wantsColumn ? .column : .row
+        guard let handle = tableHandles().first(where: { $0.axis == axis }) else {
+            return "no \(wantsColumn ? "column" : "row") handle"
+        }
+        let target = chevron && handle.selected ? selectedTabChevronBox(handle) : handle.rect
+        let point = NSPoint(x: target.midX, y: target.midY)
+        return "rect=\(handle.rect) selected=\(handle.selected) "
+            + debugClickProbe(x: point.x, y: point.y, clicks: clicks)
+    }
+
+    public func debugOpenTableCellMenu(needle: String) -> String {
+        let range = (rawSource as NSString).range(of: needle)
+        guard range.location != NSNotFound, let window else { return "no \(needle)" }
+        var actual = NSRange()
+        let onScreen = firstRect(forCharacterRange: NSRange(location: range.location, length: 0),
+                                 actualRange: &actual)
+        let point = convert(window.convertPoint(fromScreen: CGPoint(x: onScreen.midX,
+                                                                    y: onScreen.midY)), from: nil)
+        guard let event = debugMouseEvent(at: point), let menu = menu(for: event) else {
+            return "no menu at \(point)"
+        }
+        let report = "sel=\(selectedRange()) items=\(menu.items.map(\.title))"
+        menu.popUp(positioning: nil, at: point, in: self)
+        return report
+    }
+
+    /// Selects a block of cells the way a drag across them would, so a
+    /// screenshot can show the selection box without synthesizing a drag.
+    public func debugSelectTableCells(fromRow: Int, fromColumn: Int,
+                                      toRow: Int, toColumn: Int) -> String {
+        guard let blockIndex = blocks.firstIndex(where: { $0.kind == .table }) else {
+            return "no table"
+        }
+        selectTableCells(blockIndex: blockIndex,
+                         from: (fromRow, fromColumn), to: (toRow, toColumn))
+        return "ranges=\(selectedRanges.map(\.rangeValue))"
+            + " box=\(String(describing: tableCellSelectionBox()))"
+    }
+
+    /// Where the caret lands for every offset in the cell holding `needle`,
+    /// beside the cell's own box — so a caret that draws away from the text it
+    /// should sit against shows up as a number rather than as a squint.
+    public func debugCaretPositions(needle: String) -> String {
+        let ns = rawSource as NSString
+        let found = ns.range(of: needle)
+        guard found.location != NSNotFound,
+              let cell = tableCell(atRawOffset: found.location) else { return "no \(needle)" }
+        var out = "sel=\(selectedRange()) cell=\(cell.contentRange)"
+        if let grid = tableGrid(blockIndex: cell.blockIndex),
+           let box = grid.cellRect(row: cell.row, column: cell.column) {
+            out += " box.x=\(box.minX)...\(box.maxX) box.y=\(box.minY)...\(box.maxY)"
+        }
+        for offset in cell.contentRange.location...cell.contentRange.upperBound {
+            var actual = NSRange()
+            let rect = firstRect(forCharacterRange: NSRange(location: offset, length: 0),
+                                 actualRange: &actual)
+            let point = window.map { convert($0.convertPoint(fromScreen: rect.origin), from: nil) }
+            let char = offset < ns.length ? ns.substring(with: NSRange(location: offset, length: 1))
+                                          : "EOF"
+            out += " | \(offset)'\(char == "\n" ? "\\n" : char)'x=\(point.map { Int($0.x) } ?? -1)"
+        }
+        return out
+    }
+
+    /// Forces the hover state the `</>` button is revealed by, so a screenshot
+    /// can show it without the pointer being parked on the table.
+    public func debugHoverTable() -> String {
+        guard let blockIndex = blocks.firstIndex(where: { $0.kind == .table }) else {
+            return "no table"
+        }
+        hoveredTableBlock = blockIndex
+        needsDisplay = true
+        return "revealed=\(tableRawButtonIsRevealed(blockIndex: blockIndex))"
+            + " boxes=\(revealedTableRawButtons().map(\.rect))"
+    }
+
+    /// Runs a real ⌘C and reports what landed on the pasteboard, then puts back
+    /// whatever was there before. The harness runs on someone's own machine;
+    /// taking their clipboard to check a feature is not a fair trade.
+    public func debugCopyProbe() -> String {
+        let pasteboard = NSPasteboard.general
+        let saved = pasteboard.string(forType: .string)
+        copy(nil)
+        let copied = pasteboard.string(forType: .string) ?? "<nothing>"
+        pasteboard.clearContents()
+        if let saved { pasteboard.setString(saved, forType: .string) }
+        return "sel=\(selectedRanges.map(\.rangeValue)) copied="
+            + copied.replacingOccurrences(of: "\t", with: "<TAB>")
+                .replacingOccurrences(of: "\n", with: "<NL>")
+    }
+
+    /// Clicks at a view point through the real `mouseDown` path and reports
+    /// what each stage of it decided. CGEvent clicks do not land in the harness
+    /// environment, so the mouse-up is posted to the window's queue first and
+    /// `mouseDown` is then called directly: `super.mouseDown` runs its own
+    /// tracking loop and finds that up event, so the whole gesture — hit test,
+    /// AppKit's own caret placement, the wrapped-cell override, the pad snap —
+    /// runs exactly as it would for a user.
+    public func debugClickProbe(x: CGFloat, y: CGFloat, clicks: Int = 1) -> String {
+        let point = NSPoint(x: x, y: y)
+        guard let window,
+              let down = debugMouseEvent(at: point, clicks: clicks) else { return "no window" }
+        let hit = clickCharIndex(at: down)
+        let wrapped = wrappedCellCharIndex(at: down)
+        var out = "point=(\(Int(x)),\(Int(y))) clicks=\(clicks)"
+            + " hit=\(hit.map(String.init) ?? "nil")"
+            + " wrapped=\(wrapped.map(String.init) ?? "nil")"
+        if let hit {
+            out += " snap(hit)=\(tableCellCaretSnap(hit).map(String.init) ?? "nil")"
+            if let cell = tableCell(atRawOffset: hit) {
+                out += " cell=r\(cell.row)c\(cell.column)\(cell.contentRange)"
+            }
+        }
+        let up = NSEvent.mouseEvent(with: .leftMouseUp, location: convert(point, to: nil),
+                                    modifierFlags: [],
+                                    timestamp: ProcessInfo.processInfo.systemUptime,
+                                    windowNumber: window.windowNumber, context: nil,
+                                    eventNumber: 0, clickCount: clicks, pressure: 0)
+        if let up { window.postEvent(up, atStart: false) }
+        mouseDown(with: down)
+        let sel = selectedRange()
+        out += " -> sel=\(sel) raw=\(rawTableEditing ? "Y" : "N")"
+        var actual = NSRange()
+        let screen = firstRect(forCharacterRange: NSRange(location: sel.location, length: 0),
+                               actualRange: &actual)
+        let appkit = convert(window.convertPoint(fromScreen: screen.origin), from: nil)
+        out += " appkitCaretX=\(Int(appkit.x))"
+        if let wrappedRect = wrappedCellCaretRect() {
+            out += " wrappedCaretX=\(Int(wrappedRect.minX))"
+        }
+        return out
+    }
+
+    /// Drags from one view point to another through the real `mouseDown` path:
+    /// the intermediate drag events and the mouse-up are pre-queued (in order,
+    /// then read by `super.mouseDown`'s own tracking loop), exactly as
+    /// `debugClickProbe` does for a single click. Reports the resulting
+    /// selection, so a drag-select — inside a wrapped cell included — can be
+    /// exercised without a real mouse. CGEvent drags do not land in the harness.
+    public func debugDrag(fromX: CGFloat, fromY: CGFloat,
+                          toX: CGFloat, toY: CGFloat, steps: Int = 8) -> String {
+        let p1 = NSPoint(x: fromX, y: fromY), p2 = NSPoint(x: toX, y: toY)
+        guard let window, let down = debugMouseEvent(at: p1) else { return "no window" }
+        func event(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent? {
+            NSEvent.mouseEvent(with: type, location: convert(p, to: nil), modifierFlags: [],
+                               timestamp: ProcessInfo.processInfo.systemUptime,
+                               windowNumber: window.windowNumber, context: nil,
+                               eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
+        }
+        let n = max(1, steps)
+        for i in 1...n {
+            let t = CGFloat(i) / CGFloat(n)
+            let p = NSPoint(x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t)
+            if let d = event(.leftMouseDragged, p) { window.postEvent(d, atStart: false) }
+        }
+        if let up = event(.leftMouseUp, p2) { window.postEvent(up, atStart: false) }
+        mouseDown(with: down)
+        let sel = selectedRange()
+        var out = "drag (\(Int(fromX)),\(Int(fromY)))->(\(Int(toX)),\(Int(toY)))"
+            + " ranges=\(selectedRanges.map(\.rangeValue))"
+        if let cell = tableCell(atRawOffset: sel.location) {
+            out += " startCell=r\(cell.row)c\(cell.column)"
+        }
+        out += " wrappedRects=\(wrappedCellRects(for: sel).count)"
+        return out
+    }
+
+    /// Drags the caret's row or column pill `distance` points along its axis
+    /// over `duration` seconds through the real `mouseDown`. Unlike `debugDrag`,
+    /// which lands the whole gesture in one frame, each drag event is posted by
+    /// its own timer in the common modes, so it fires inside the pill's tracking
+    /// loop (`nextEvent` runs the event-tracking mode) and the lift and the bar
+    /// animate as under a pointer — what a screen recording needs.
+    public func debugDragTableHandle(column wantsColumn: Bool, distance: CGFloat,
+                                     duration: TimeInterval) -> String {
+        let axis: TableHandle.Axis = wantsColumn ? .column : .row
+        guard let window, let handle = tableHandles().first(where: { $0.axis == axis }),
+              let down = debugMouseEvent(at: NSPoint(x: handle.rect.midX, y: handle.rect.midY)) else {
+            return "no \(wantsColumn ? "column" : "row") handle"
+        }
+        let start = NSPoint(x: handle.rect.midX, y: handle.rect.midY)
+        let number = window.windowNumber
+        let steps = max(1, Int(duration * 60))
+        for i in 0...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let eased = t * t * (3 - 2 * t)
+            let location = convert(NSPoint(x: start.x + (wantsColumn ? distance * eased : 0),
+                                           y: start.y + (wantsColumn ? 0 : distance * eased)), to: nil)
+            let type: NSEvent.EventType = i == steps ? .leftMouseUp : .leftMouseDragged
+            // The drop waits a beat after the last move, as a hand would.
+            let delay = duration * Double(t) + (i == steps ? 0.25 : 0)
+            let timer = Timer(timeInterval: delay, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    guard let event = NSEvent.mouseEvent(
+                        with: type, location: location, modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: number,
+                        context: nil, eventNumber: 0, clickCount: 1,
+                        pressure: type == .leftMouseUp ? 0 : 1) else { return }
+                    NSApp.postEvent(event, atStart: false)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        mouseDown(with: down)
+        return "\(wantsColumn ? "column" : "row") by \(distance) ranges=\(selectedRanges.map(\.rangeValue))"
+    }
+
+    /// Clicks every cell of every table at five points across its width and
+    /// reports only what came out wrong: a caret that left the cell it was
+    /// clicked in, or one that stopped short of the cell's text when the click
+    /// landed past that text. One run answers "does clicking into a cell put
+    /// the caret where it should" for the whole document.
+    public func debugClickAudit(rows wanted: ClosedRange<Int>? = nil) -> String {
+        var lines: [String] = []
+        var checked = 0
+        for (index, block) in blocks.enumerated() where block.kind == .table {
+            guard let grid = tableGrid(blockIndex: index) else { continue }
+            for row in grid.rows.indices where row != 1
+                && (wanted?.contains(row) ?? true) {
+                for column in 0..<grid.columns {
+                    guard let box = grid.cellRect(row: row, column: column),
+                          let cell = tableCell(blockIndex: index, row: row, column: column)
+                    else { continue }
+                    let target = tableCellCaretSnap(cell.contentRange.upperBound)
+                        ?? cell.contentRange.upperBound
+                    let textEnd = caretRect(target)
+                    for fraction in [0.04, 0.25, 0.5, 0.75, 0.96] as [CGFloat] {
+                        let point = NSPoint(x: box.minX + box.width * fraction, y: box.midY)
+
+                        // Only meaningful on the text's own visual line: a
+                        // wrapped cell's earlier lines are all "past" the last
+                        // line's caret in x while being ordinary text.
+                        let onTextLine = point.y >= textEnd.minY && point.y <= textEnd.maxY
+                        let pastText = onTextLine && point.x > textEnd.maxX + 1
+                        for clicks in [1, 2] {
+                            guard click(at: point, clicks: clicks) else { continue }
+                            checked += 1
+                            let selection = selectedRange()
+                            let got = selection.location
+                            let inCell = got >= cell.contentRange.location
+                                && selection.upperBound <= cell.contentRange.upperBound
+                            let what = "r\(row)c\(column) f\(fraction) x\(clicks)"
+                            if !inCell {
+                                lines.append("\(what) LEFT THE CELL"
+                                    + " sel=\(selection) cell=\(cell.contentRange)")
+                            } else if tableCellSelectionIsJunk(selection, at: point) {
+                                lines.append("\(what) SELECTED PAD sel=\(selection)")
+                            } else if pastText && selection.length == 0 && got != target {
+                                lines.append("\(what) SHORT OF THE TEXT"
+                                    + " sel=\(got) want=\(target)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return "checked=\(checked) failures=\(lines.count)"
+            + (lines.isEmpty ? "" : "\n  " + lines.joined(separator: "\n  "))
+    }
+
+    /// The caret's rect for an offset, in view coordinates.
+    private func caretRect(_ offset: Int) -> NSRect {
+        guard let window else { return .zero }
+        var actual = NSRange()
+        let screen = firstRect(forCharacterRange: NSRange(location: offset, length: 0),
+                               actualRange: &actual)
+        let origin = convert(window.convertPoint(fromScreen: screen.origin), from: nil)
+        return NSRect(x: origin.x, y: origin.y, width: screen.width, height: screen.height)
+    }
+
+    /// A real click at a view point: the mouse-up goes on the window's queue
+    /// first so `super.mouseDown`'s own tracking loop finds it, and the whole
+    /// gesture then runs exactly as it would for a user. CGEvent clicks do not
+    /// land in the harness environment, which is why this exists.
+    @discardableResult
+    private func click(at point: NSPoint, clicks: Int = 1) -> Bool {
+        guard let window, let down = debugMouseEvent(at: point, clicks: clicks) else { return false }
+        // A pill's hit box is generous enough to reach a couple of points into
+        // a narrow first column, and its menu runs its own event loop — which
+        // would hang the audit rather than fail it. Checked here rather than
+        // once per point: the pills follow the caret, so the click before this
+        // one can have moved a pill onto the very point about to be clicked.
+        if tableHandleHit(at: down) != nil { return false }
+        if tableCellSelectionAnchor(at: point) != nil { return false }
+
+        let up = NSEvent.mouseEvent(with: .leftMouseUp, location: convert(point, to: nil),
+                                    modifierFlags: [],
+                                    timestamp: ProcessInfo.processInfo.systemUptime,
+                                    windowNumber: window.windowNumber, context: nil,
+                                    eventNumber: 0, clickCount: clicks, pressure: 0)
+        if let up { window.postEvent(up, atStart: false) }
+        mouseDown(with: down)
+        // If the tracking loop did not consume the up, it would be picked up by
+        // the next gesture's loop — which is how a stale up carrying another
+        // click count turns the next single click into a word selection.
+        NSApp.discardEvents(matching: .any, before: nil)
+        return true
+    }
+
+    /// Every table row's decoration flags beside the fragment they are drawn
+    /// against, so a missing grid line can be read off as a number: whether the
+    /// row asked for a bottom border at all, and where that border would land.
+    public func debugTableRules() -> String {
+        guard let tlm = textLayoutManager, let storage = textStorage else { return "no layout" }
+        var out: [String] = []
+        for (index, block) in blocks.enumerated() where block.kind == .table {
+            out.append("table block \(index) range=\(block.range)")
+            let ns = rawSource as NSString
+            var line = 0
+            var offset = block.range.location
+            while offset < block.range.upperBound {
+                let lineRange = ns.lineRange(for: NSRange(location: offset, length: 0))
+                var flags = "no decoration"
+                if let decoration = storage.attribute(.blockDecoration, at: offset,
+                                                      effectiveRange: nil) as? BlockDecoration,
+                   case .tableRow(_, _, _, let separator, let bottomBorder,
+                                  let topInset) = decoration.kind {
+                    flags = "sep=\(separator ? "Y" : "N") bottom=\(bottomBorder ? "Y" : "N")"
+                        + " topInset=\(topInset)"
+                }
+                var geometry = "no fragment"
+                if let location = tlm.location(tlm.documentRange.location, offsetBy: offset),
+                   let fragment = tlm.textLayoutFragment(for: location) {
+                    let frame = fragment.layoutFragmentFrame
+                    geometry = "y=\(frame.minY) h=\(frame.height)"
+                        + " ruleAt=\(frame.minY + frame.height)"
+                }
+                out.append("  line \(line) \(flags) \(geometry)")
+                line += 1
+                offset = lineRange.upperBound
+            }
+        }
+        return out.joined(separator: "\n")
+    }
+
+    /// A click that is *held*: the mouse-up is posted `holdMs` later on a
+    /// common-modes timer, so the tracking loop inside `mouseDown` spins for
+    /// that long and display frames render in between — as they do for a
+    /// human click. `debugClickProbe` queues the up first, so its gesture is
+    /// over before a single frame paints, which is why it never showed the
+    /// caret flash. Reports the insertion-indicator views before and after.
+    public func debugClickHold(x: CGFloat, y: CGFloat, holdMs: Double) -> String {
+        let point = NSPoint(x: x, y: y)
+        guard let window, let down = debugMouseEvent(at: point) else { return "no window" }
+        var out = "t=\(Self.debugMs()) point=(\(Int(x)),\(Int(y))) hold=\(Int(holdMs))ms"
+        out += " before[\(debugInsertionIndicators())]"
+        let up = NSEvent.mouseEvent(with: .leftMouseUp, location: convert(point, to: nil),
+                                    modifierFlags: [],
+                                    timestamp: ProcessInfo.processInfo.systemUptime,
+                                    windowNumber: window.windowNumber, context: nil,
+                                    eventNumber: 0, clickCount: 1, pressure: 0)
+        // Main-actor closure (Sendable), so the timer's block captures no
+        // NSEvent or NSWindow of its own.
+        let postUp: @MainActor () -> Void = {
+            if let up { window.postEvent(up, atStart: false) }
+        }
+        let timer = Timer(timeInterval: holdMs / 1000, repeats: false) { _ in
+            // Main run loop, common modes: fires inside the tracking loop.
+            MainActor.assumeIsolated { postUp() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        // Direct: `window.sendEvent` drops a synthesized event here.
+        mouseDown(with: down)
+        let sel = selectedRange()
+        out += " -> t=\(Self.debugMs()) sel=\(sel)"
+        if let r = wrappedCellCaretRect() {
+            let w = convert(r, to: nil)
+            out += " wrappedCaret view=\(r) win=\(w)"
+        }
+        out += " after[\(debugInsertionIndicators())]"
+        return out
+    }
+
+    /// `-debug.caretTrace YES` turns the caret trace on.
+    private var debugCaretTrace: Bool { UserDefaults.standard.bool(forKey: "debug.caretTrace") }
+
+    /// Milliseconds of process uptime — the one clock the caret trace, the
+    /// click report and the burst capture's file names all share.
+    nonisolated public static func debugMs() -> Int {
+        Int(ProcessInfo.processInfo.systemUptime * 1000)
+    }
+
+    /// Caret trace: every change of AppKit's insertion point, with the time
+    /// and the caller, so a burst capture's frames can be lined up against
+    /// exactly which code turned the caret on, off, accent or clear.
+    public override var insertionPointColor: NSColor? {
+        didSet {
+            guard debugCaretTrace else { return }
+            let c = insertionPointColor == .clear ? "clear" : "accent"
+            Log.info("carettrace t=\(Self.debugMs()) color=\(c) sel=\(selectedRange()) "
+                     + Self.debugCaller(), category: .app)
+        }
+    }
+
+    public override func setNeedsDisplay(_ invalidRect: NSRect) {
+        if debugCaretTrace, invalidRect.minY < 220 {
+            Log.info("carettrace inval t=\(Self.debugMs()) rect=\(invalidRect) " + Self.debugCaller(),
+                     category: .app)
+        }
+        super.setNeedsDisplay(invalidRect)
+    }
+
+    public override func updateInsertionPointStateAndRestartTimer(_ restartFlag: Bool) {
+        if debugCaretTrace {
+            Log.info("carettrace t=\(Self.debugMs()) restartTimer(\(restartFlag)) "
+                     + "sel=\(selectedRange()) " + Self.debugCaller(), category: .app)
+        }
+        super.updateInsertionPointStateAndRestartTimer(restartFlag)
+    }
+
+    private static func debugCaller() -> String {
+        Thread.callStackSymbols.dropFirst(2).prefix(4).map {
+            // "3   EdmundCore   0x… $s10EdmundCore…F + 123" → the symbol only.
+            let parts = $0.split(separator: " ", omittingEmptySubsequences: true)
+            return parts.count >= 4 ? String(parts[3].prefix(70)) : $0
+        }.joined(separator: " < ")
+    }
+
+    /// The view and layer tree under the window's content view, with the
+    /// animations running on each layer — to find where AppKit's caret lives
+    /// and what fades it.
+    public func debugViewTree() -> String {
+        var out: [String] = []
+        func layerLine(_ l: CALayer, _ indent: String) {
+            let anims = l.animationKeys() ?? []
+            out.append("\(indent)L \(type(of: l)) frame=\(l.frame) hidden=\(l.isHidden)"
+                       + " opacity=\(l.opacity) bg=\(l.backgroundColor.map { "\($0)" } ?? "nil")"
+                       + " anims=\(anims)")
+            for s in l.sublayers ?? [] { layerLine(s, indent + "  ") }
+        }
+        func walk(_ v: NSView, _ depth: Int) {
+            let indent = String(repeating: "  ", count: depth)
+            let name = "\(type(of: v))"
+            let interesting = name.contains("Text") || name.contains("Selection")
+                || name.contains("Insertion") || name.contains("Caret") || name.contains("Cursor")
+            out.append("\(indent)V \(name) frame=\(v.frame) hidden=\(v.isHidden) alpha=\(v.alphaValue)"
+                       + " layer=\(v.layer.map { "\(type(of: $0))" } ?? "nil")")
+            if interesting, name != "EditorTextView", let l = v.layer { layerLine(l, indent + "  ") }
+            for s in v.subviews { walk(s, depth + 1) }
+        }
+        if let root = window?.contentView { walk(root, 0) }
+        return out.joined(separator: "\n")
+    }
+
+    /// Every `NSTextInsertionIndicator` under this view (AppKit's caret on
+    /// macOS 14+), with the state that decides whether it can paint.
+    public func debugInsertionIndicators() -> String {
+        var found: [String] = []
+        func walk(_ v: NSView, _ depth: Int) {
+            if #available(macOS 14.0, *), let i = v as? NSTextInsertionIndicator {
+                let win = i.convert(i.bounds, to: nil)
+                found.append("ind frame=\(i.frame) win=\(win) hidden=\(i.isHidden)"
+                    + " mode=\(i.displayMode.rawValue) color=\(i.color.map { "\($0)" } ?? "nil")"
+                    + " alpha=\(i.alphaValue) opts=\(i.automaticModeOptions.rawValue)"
+                    + " super=\(type(of: i.superview!))")
+            }
+            for s in v.subviews { walk(s, depth + 1) }
+        }
+        walk(self, 0)
+        return found.isEmpty ? "none" : found.joined(separator: "; ")
+    }
+
+    private func debugMouseEvent(at point: NSPoint, clicks: Int = 1) -> NSEvent? {
+        guard let window else { return nil }
+        return NSEvent.mouseEvent(with: .leftMouseDown, location: convert(point, to: nil),
+                                  modifierFlags: [],
+                                  timestamp: ProcessInfo.processInfo.systemUptime,
+                                  windowNumber: window.windowNumber, context: nil,
+                                  eventNumber: 0, clickCount: clicks, pressure: 1)
+    }
+}
+#endif

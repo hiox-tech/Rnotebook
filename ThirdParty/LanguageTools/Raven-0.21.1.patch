@@ -1,0 +1,508 @@
+--- a/crates/raven/src/parameter_resolver.rs
++++ b/crates/raven/src/parameter_resolver.rs
+@@ -91,6 +91,8 @@
+ pub struct SignatureCache {
+     /// Package function signatures ("package::function" -> signature)
+     package_signatures: RwLock<LruCache<String, FunctionSignature>>,
++    failures: RwLock<LruCache<String, std::time::Instant>>,
++    lookup_gate: std::sync::Mutex<()>,
+ }
+ 
+ // LruCache doesn't derive Debug; implement manually using finish_non_exhaustive()
+@@ -106,6 +108,8 @@
+         let pkg_cap = NonZeroUsize::new(max_package).unwrap_or(NonZeroUsize::new(500).unwrap());
+         Self {
+             package_signatures: RwLock::new(LruCache::new(pkg_cap)),
++            failures: RwLock::new(LruCache::new(pkg_cap)),
++            lookup_gate: std::sync::Mutex::new(()),
+         }
+     }
+ 
+@@ -119,6 +123,38 @@
+     pub fn insert_package(&self, key: String, sig: FunctionSignature) {
+         if let Ok(mut cache) = self.package_signatures.write() {
+             cache.push(key, sig);
++        }
++    }
++}
++
++impl SignatureCache {
++    pub fn clear(&self) {
++        if let Ok(mut c) = self.package_signatures.write() { c.clear(); }
++        if let Ok(mut c) = self.failures.write() { c.clear(); }
++    }
++
++    // Called on a blocking worker. Serialize misses, then recheck the cache;
++    // this also coalesces concurrent lookups for the same function.
++    pub fn query_package(&self, function: &str, package: &str, internal: bool,
++                         r: &crate::r_subprocess::RSubprocess) -> Option<FunctionSignature> {
++        let key = format!("{}::{}", package, function);
++        if let Some(hit) = self.get_package(&key) { return Some(hit); }
++        let _guard = self.lookup_gate.lock().ok()?;
++        if let Some(hit) = self.get_package(&key) { return Some(hit); }
++        if self.failures.read().ok()?.peek(&key)
++            .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(5)) { return None; }
++        let handle = tokio::runtime::Handle::try_current().ok()?;
++        match handle.block_on(r.get_function_formals(function, Some(package), !internal)) {
++            Ok(parameters) => {
++                let value = FunctionSignature { name: function.to_string(), parameters,
++                    source: SignatureSource::RSubprocess { package: Some(package.to_string()) } };
++                self.insert_package(key, value.clone());
++                Some(value)
++            }
++            Err(_) => {
++                self.failures.write().ok()?.push(key, std::time::Instant::now());
++                None
++            }
+         }
+     }
+ }
+@@ -498,72 +534,10 @@
+             return Some(sig);
+         }
+ 
+-        // R subprocess integration with graceful degradation (Requirement 11.1, 11.2, 11.3)
+-        // Query the source/exported member while preserving the local alias in
+-        // the returned signature.
+-        if let Some(r_subprocess) = state.package_library.r_subprocess() {
+-            let handle = match tokio::runtime::Handle::try_current() {
+-                Ok(h) => h,
+-                Err(_) => {
+-                    log::trace!(
+-                        "No tokio runtime available for R subprocess query; skipping package function {}::{}",
+-                        pkg_name,
+-                        exported_name
+-                    );
+-                    return None;
+-                }
+-            };
+-
+-            let formals_result = handle.block_on(r_subprocess.get_function_formals(
+-                &exported_name,
+-                Some(&pkg_name),
+-                !is_internal,
+-            ));
+-
+-            match formals_result {
+-                Ok(params) => {
+-                    let cached_signature = FunctionSignature {
+-                        name: exported_name.clone(),
+-                        parameters: params,
+-                        source: SignatureSource::RSubprocess {
+-                            package: Some(pkg_name.clone()),
+-                        },
+-                    };
+-                    cache.insert_package(cache_key, cached_signature.clone());
+-                    let mut signature = cached_signature;
+-                    signature.name = function_name.to_string();
+-                    log::trace!(
+-                        "Resolved package function {}::{} via R subprocess ({} params)",
+-                        pkg_name,
+-                        exported_name,
+-                        signature.parameters.len()
+-                    );
+-                    return Some(signature);
+-                }
+-                Err(e) => {
+-                    if e.to_string().contains("timeout") || e.to_string().contains("timed out") {
+-                        log::warn!(
+-                            "R subprocess timeout querying formals for {}::{}: {}",
+-                            pkg_name,
+-                            exported_name,
+-                            e
+-                        );
+-                    } else {
+-                        log::trace!(
+-                            "Failed to get formals for {}::{} from R subprocess: {}",
+-                            pkg_name,
+-                            exported_name,
+-                            e
+-                        );
+-                    }
+-                }
+-            }
+-        } else {
+-            log::trace!(
+-                "No R subprocess available; cannot query formals for {}::{}",
+-                pkg_name,
+-                exported_name
+-            );
++        if let Some(r) = state.package_library.r_subprocess() {
++            let mut signature = cache.query_package(&exported_name, &pkg_name, is_internal, r)?;
++            signature.name = function_name.to_string();
++            return Some(signature);
+         }
+     }
+ 
+--- a/crates/raven/src/state.rs
++++ b/crates/raven/src/state.rs
+@@ -7815,6 +7815,7 @@
+     /// callers funnelled through this helper makes it impossible to flush one
+     /// cache and forget the other.
+     pub fn clear_help_caches(&self) {
++        self.signature_cache.clear();
+         self.help_cache.drain();
+         self.html_help_cache.drain();
+     }
+--- a/crates/raven/src/handlers.rs
++++ b/crates/raven/src/handlers.rs
+@@ -27283,94 +27283,19 @@
+ /// # Returns
+ /// Some(SignatureInformation) if successful, None if help unavailable
+ async fn try_build_package_signature(
+-    help_cache: &crate::help::HelpCache,
+-    display_name: &str,
+-    topic_name: &str,
+-    package_name: &str,
+-    r_path: std::path::PathBuf,
++    display_name: String, topic: String, package: String,
++    cache: std::sync::Arc<crate::parameter_resolver::SignatureCache>,
++    r: Option<crate::r_subprocess::RSubprocess>, internal: bool,
+ ) -> Option<SignatureInformation> {
+-    // Fetch help text from cache (may block on R subprocess). Bound the
+-    // whole await with `HELP_LOOKUP_TIMEOUT` so a runaway subprocess can't
+-    // freeze signature help — see the constant's docs for why this is on
+-    // top of the inner subprocess timeout.
+-    let help_task = tokio::task::spawn_blocking({
+-        let cache = help_cache.clone();
+-        let func = topic_name.to_string();
+-        let pkg = package_name.to_string();
+-        let rp = r_path.clone();
+-        move || cache.get_or_fetch(&func, Some(&pkg), &rp)
+-    });
+-    let help_text = tokio::time::timeout(HELP_LOOKUP_TIMEOUT, help_task)
+-        .await
+-        .ok()
+-        .and_then(|join| join.ok())
+-        .flatten()?;
+-
+-    // Extract signature from help text
+-    let signature_str = crate::help::extract_signature_from_help(&help_text);
+-
+-    // Extract description from help text
+-    let description = crate::help::extract_description_from_help(&help_text);
+-
+-    // Get parameter documentation. Same timeout protection as above.
+-    let args_task = tokio::task::spawn_blocking({
+-        let cache = help_cache.clone();
+-        let func = topic_name.to_string();
+-        let pkg = package_name.to_string();
+-        move || cache.get_arguments(&func, Some(&pkg), &r_path)
+-    });
+-    let param_docs = tokio::time::timeout(HELP_LOOKUP_TIMEOUT, args_task)
+-        .await
+-        .ok()
+-        .and_then(|join| join.ok())?;
+-
+-    // If we have a signature, parse it to extract parameters
+-    if let Some(sig_str) = signature_str {
+-        // Extract parameters from the signature string
+-        // The signature is in the form "function_name(param1, param2 = default, ...)"
+-        // We need to parse this to build ParameterInformation for each parameter
+-        let params = parse_signature_params(&sig_str);
+-
+-        // Build parameter information with documentation
+-        let parameters: Vec<ParameterInformation> = params
+-            .iter()
+-            .map(|param| {
+-                let param_doc = param_docs
+-                    .as_ref()
+-                    .and_then(|docs| docs.get(&param.name))
+-                    .map(|s| s.as_str());
+-                build_parameter_information(param, param_doc)
+-            })
+-            .collect();
+-
+-        // Build the signature label
+-        let label = format_signature_label(display_name, &params);
+-
+-        // Build documentation
+-        let documentation = description.map(|desc| {
+-            Documentation::MarkupContent(MarkupContent {
+-                kind: MarkupKind::Markdown,
+-                value: desc,
+-            })
+-        });
+-
+-        return Some(SignatureInformation {
+-            label,
+-            documentation,
+-            parameters: Some(parameters),
+-            active_parameter: None,
+-        });
+-    }
+-
+-    // Fallback: function name with package attribution
++    let r = r?;
++    let signature = tokio::task::spawn_blocking(move || {
++        cache.query_package(&topic, &package, internal, &r)
++    }).await.ok()??;
+     Some(SignatureInformation {
+-        label: format!("{}(...)", display_name),
+-        documentation: Some(Documentation::MarkupContent(MarkupContent {
+-            kind: MarkupKind::Markdown,
+-            value: format!("from `{}`", package_name),
+-        })),
+-        parameters: None,
+-        active_parameter: None,
++        label: format_signature_label(&display_name, &signature.parameters),
++        parameters: Some(signature.parameters.iter()
++            .map(|p| build_parameter_information(p, None)).collect()),
++        documentation: None, active_parameter: None,
+     })
+ }
+ 
+@@ -27489,18 +27414,12 @@
+ 
+ /// What async work (if any) is needed to complete signature help.
+ enum SignatureResolution {
+-    /// Package function — needs async help fetch.
+     Package {
+-        help_cache: crate::help::HelpCache,
+-        display_name: String,
+-        topic_name: String,
+-        package_name: String,
+-        /// Pre-built fallback used when async package lookup returns `None`.
++        display_name: String, topic_name: String, package_name: String,
++        formal_cache: std::sync::Arc<crate::parameter_resolver::SignatureCache>,
++        r_subprocess: Option<crate::r_subprocess::RSubprocess>, is_internal: bool,
+         fallback: SignatureInformation,
+-        /// Resolved R executable path for spawning the help subprocess.
+-        r_path: std::path::PathBuf,
+     },
+-    /// Already resolved (user function or fallback).
+     Ready(SignatureInformation),
+ }
+ 
+@@ -27593,177 +27512,71 @@
+ /// Call this under a read lock, then release the lock before calling
+ /// [`resolve_signature_help`].
+ pub fn prepare_signature_help(
+-    state: &WorldState,
+-    uri: &Url,
+-    position: Position,
++    state: &WorldState, uri: &Url, position: Position,
+ ) -> Option<SignatureHelpContext> {
+     let doc = state.get_document(uri)?;
+-    if doc.file_type == FileType::Stan {
+-        return None;
+-    }
++    if doc.file_type == FileType::Stan { return None; }
+     if doc.file_type == FileType::Jags {
+         return prepare_jags_signature_help(&doc.text(), position);
+     }
+-    // Rmd/Quarto: signature help is first-class inside R chunk bodies, but a
+-    // prose position maps to a blank masked line. The call-node search below
+-    // would already find nothing there, but an explicit guard makes the intent
+-    // clear and avoids any reliance on masking incidentally yielding no `call`
+-    // node. Checked against the RAW text (fences are blanked in the mask).
+-    if doc.is_rmd_document() && !crate::chunks::position_in_r_chunk_body(&doc.text(), position.line)
+-    {
++    if doc.is_rmd_document() && !crate::chunks::position_in_r_chunk_body(&doc.text(), position.line) {
+         return None;
+     }
+     let tree = doc.tree.as_ref()?;
+-    // Byte offsets paired with `tree` index into the analysis text (masked for
+-    // Rmd); behavior-neutral for plain R.
+     let text = doc.analysis_text();
+-
++    let call = crate::completion_context::detect_function_call_context(tree, &text, position)?;
+     let point = lsp_position_to_ts_point(&text, position);
+-
+-    // Find enclosing call
+-    let mut node = tree.root_node().descendant_for_point_range(point, point)?;
+-
+-    let call_node = loop {
+-        if node.kind() == "call" {
+-            break node;
+-        }
+-        node = node.parent()?;
++    let active = tree.root_node().descendant_for_point_range(point, point)
++        .and_then(|mut node| loop {
++            if node.kind() == "call" { break detect_active_parameter(node, point); }
++            match node.parent() { Some(parent) => node = parent, None => break None }
++        });
++    if call.namespace.is_none() {
++        if let Some(signature) = crate::parameter_resolver::resolve_user_only(
++            state, &call.function_name, uri, position) {
++            return Some(SignatureHelpContext { active_parameter: active,
++                resolution: SignatureResolution::Ready(SignatureInformation {
++                    label: format_signature_label(&call.function_name, &signature.parameters),
++                    parameters: Some(signature.parameters.iter()
++                        .map(|p| build_parameter_information(p, None)).collect()),
++                    documentation: None, active_parameter: None,
++                }) });
++        }
++    }
++    let scope = get_cross_file_scope(state, uri, position.line, position.character,
++        &DiagCancelToken::never(), Some(state.package_state.scope_contribution()));
++    let packages: Vec<String> = scope.inherited_packages.iter().chain(scope.loaded_packages.iter()).cloned().collect();
++    let package = call.namespace.clone().or_else(|| {
++        state.package_library.find_package_owner_for_symbol(&call.function_name, &packages)
++    });
++    let fallback = build_fallback_signature(&call.function_name, &scope, uri, state);
++    let resolution = if let Some(package_name) = package {
++        if crate::package_library::is_load_all_sentinel(&package_name) {
++            SignatureResolution::Ready(fallback)
++        } else {
++            SignatureResolution::Package {
++                display_name: call.namespace.as_ref().map(|p| format!("{}::{}", p, call.function_name))
++                    .unwrap_or_else(|| call.function_name.clone()),
++                topic_name: call.function_name, package_name,
++                formal_cache: state.signature_cache.clone(),
++                r_subprocess: state.package_library.r_subprocess().cloned(),
++                is_internal: call.is_internal, fallback,
++            }
++        }
++    } else { SignatureResolution::Ready(fallback) };
++    Some(SignatureHelpContext { active_parameter: active, resolution })
++}
++
++pub async fn resolve_signature_help(ctx: SignatureHelpContext) -> Option<SignatureHelp> {
++    let info = match ctx.resolution {
++        SignatureResolution::Ready(info) => info,
++        SignatureResolution::Package { display_name, topic_name, package_name,
++            formal_cache, r_subprocess, is_internal, fallback } => {
++            try_build_package_signature(display_name, topic_name, package_name,
++                formal_cache, r_subprocess, is_internal).await.unwrap_or(fallback)
++        }
+     };
+-
+-    // Extract function name from call node
+-    let mut cursor = call_node.walk();
+-    let children: Vec<_> = call_node.children(&mut cursor).collect();
+-
+-    if children.is_empty() {
+-        return None;
+-    }
+-
+-    let func_node = children[0];
+-    let func_name = node_text(func_node, &text);
+-
+-    // Determine if package or user function using cross-file scope
+-    let scope = get_cross_file_scope(
+-        state,
+-        uri,
+-        position.line,
+-        position.character,
+-        &DiagCancelToken::never(),
+-        Some(state.package_state.scope_contribution()),
+-    );
+-
+-    /// Try user signature, falling back to a minimal signature with source attribution.
+-    fn resolve_user_or_fallback(
+-        state: &WorldState,
+-        func_name: &str,
+-        uri: &Url,
+-        position: Position,
+-        scope: &scope::ScopeAtPosition,
+-    ) -> SignatureResolution {
+-        SignatureResolution::Ready(
+-            try_build_user_signature(state, func_name, uri, position)
+-                .unwrap_or_else(|| build_fallback_signature(func_name, scope, uri, state)),
+-        )
+-    }
+-
+-    // Resolve the R executable path for any package help lookups.
+-    // Falls back to "R" (PATH lookup) when no explicit path is configured.
+-    let r_path: std::path::PathBuf = state
+-        .cross_file_config
+-        .packages_r_path
+-        .clone()
+-        .unwrap_or_else(|| std::path::PathBuf::from("R"));
+-
+-    // Determine resolution strategy
+-    let resolution = if let Some(symbol) = scope.symbols.get(func_name) {
+-        if let Some(pkg) = crate::cross_file::scope::package_name_from_uri(&symbol.source_uri) {
+-            let topic = crate::cross_file::scope::package_export_from_uri(&symbol.source_uri)
+-                .map_or_else(|| func_name.to_string(), |topic| topic.into_owned());
+-            SignatureResolution::Package {
+-                help_cache: state.help_cache.clone(),
+-                display_name: func_name.to_string(),
+-                topic_name: topic,
+-                package_name: pkg.to_string(),
+-                fallback: build_fallback_signature(func_name, &scope, uri, state),
+-                r_path: r_path.clone(),
+-            }
+-        } else {
+-            resolve_user_or_fallback(state, func_name, uri, position, &scope)
+-        }
+-    } else if state.cross_file_config.packages_enabled {
+-        let all_packages: Vec<String> = scope
+-            .inherited_packages
+-            .iter()
+-            .chain(scope.loaded_packages.iter())
+-            .cloned()
+-            .collect();
+-
+-        if let Some(pkg_name) = state
+-            .package_library
+-            .find_package_owner_for_symbol(func_name, &all_packages)
+-        {
+-            if crate::package_library::is_load_all_sentinel(&pkg_name) {
+-                // load_all() internal: no installed help, and the raw sentinel
+-                // must never reach the R subprocess. Resolve to a ready fallback
+-                // signature attributed to the dev package, skipping the help path.
+-                SignatureResolution::Ready(build_load_all_signature(func_name, &scope, uri, state))
+-            } else {
+-                SignatureResolution::Package {
+-                    help_cache: state.help_cache.clone(),
+-                    display_name: func_name.to_string(),
+-                    topic_name: func_name.to_string(),
+-                    package_name: pkg_name,
+-                    fallback: build_fallback_signature(func_name, &scope, uri, state),
+-                    r_path,
+-                }
+-            }
+-        } else {
+-            resolve_user_or_fallback(state, func_name, uri, position, &scope)
+-        }
+-    } else {
+-        resolve_user_or_fallback(state, func_name, uri, position, &scope)
+-    };
+-
+-    // Detect active parameter
+-    let active_param = detect_active_parameter(call_node, point);
+-
+-    Some(SignatureHelpContext {
+-        active_parameter: active_param,
+-        resolution,
+-    })
+-}
+-
+-/// Async phase of signature help: performs R subprocess work (if needed)
+-/// and assembles the final `SignatureHelp`.
+-///
+-/// Does **not** require `&WorldState` — call after releasing the read lock.
+-pub async fn resolve_signature_help(ctx: SignatureHelpContext) -> Option<SignatureHelp> {
+-    let signature_info = match ctx.resolution {
+-        SignatureResolution::Package {
+-            help_cache,
+-            display_name,
+-            topic_name,
+-            package_name,
+-            fallback,
+-            r_path,
+-        } => {
+-            let sig = try_build_package_signature(
+-                &help_cache,
+-                &display_name,
+-                &topic_name,
+-                &package_name,
+-                r_path,
+-            )
+-            .await;
+-            sig.unwrap_or(fallback)
+-        }
+-        SignatureResolution::Ready(sig) => sig,
+-    };
+-
+-    Some(SignatureHelp {
+-        signatures: vec![signature_info],
+-        active_signature: Some(0),
+-        active_parameter: ctx.active_parameter,
+-    })
++    Some(SignatureHelp { signatures: vec![info], active_signature: Some(0), active_parameter: ctx.active_parameter })
+ }
+ 
+ /// Build a minimal fallback `SignatureInformation` with source attribution.

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook Help"><meta name="description" content="R Basics"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>R Basics</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">User Guide</a></nav><main><a name="rnotebook-r-basics" id="rnotebook-r-basics"></a><h1 id="title">R Basics</h1>
+<p>Run these examples inside a complete executable R chunk. Follow them in order within one document: later examples use objects created earlier. R is case-sensitive: <code>values</code> and <code>Values</code> differ. Text after <code>#</code> is a comment.</p>
+<h2 id="section-0">Objects, vectors and calculations</h2>
+<pre><code>values &lt;- c(12, 18, 24)       # Assign a vector
+values * 2                   # Element-wise: 24 36 48
+mean(values)                 # Mean: 18
+length(values)               # Number of elements: 3
+sum(values)                  # Total: 54
+labels &lt;- c(&quot;A&quot;, &quot;B&quot;, &quot;C&quot;)   # Character vector
+values &gt; 15                  # FALSE TRUE TRUE
+</code></pre>
+<p>Call a function as <code>name(arguments)</code>. Arguments can be named, as in <code>mean(values, na.rm = TRUE)</code>. Common types include numeric, character and logical. <code>TRUE</code> and <code>FALSE</code> are logical values; <code>NA</code> represents a missing value.</p>
+<h2 id="section-1">Indexing and missing values</h2>
+<pre><code>values[1]                    # Indexing starts at 1: 12
+values[c(1, 3)]              # Elements 1 and 3: 12 24
+values[values &gt; 15]          # Select by condition: 18 24
+with_missing &lt;- c(12, NA, 24)
+is.na(with_missing)          # FALSE TRUE FALSE
+mean(with_missing)           # NA
+mean(with_missing, na.rm = TRUE)  # 18
+</code></pre>
+<p>Use <code>is.na(x)</code> rather than <code>x == NA</code>. <code>==</code> compares values, while <code>&lt;-</code> assigns them. <code>&amp;</code> and <code>|</code> are element-wise AND and OR; <code>!</code> negates a condition.</p>
+<h2 id="section-2">Data frames and inspection</h2>
+<pre><code>dat &lt;- data.frame(
+  group = c(&quot;A&quot;, &quot;A&quot;, &quot;B&quot;),
+  score = c(12, 18, 24)
+)
+head(dat)                    # First rows
+str(dat)                     # Structure and column types
+nrow(dat)                    # Rows: 3
+names(dat)                   # Column names
+dat$score                    # Column as a vector
+dat[dat$score &gt;= 18, ]        # Matching rows, all columns
+dat$double &lt;- dat$score * 2   # Add a column
+summary(dat$score)            # Summary statistics
+</code></pre>
+<p><code>dat[rows, columns]</code> separates dimensions with a comma; leaving a dimension empty selects all of it. Inspect table contents using the read-only variable preview, and change data through R code.</p>
+<h2 id="section-3">Read and write CSV</h2>
+<p>Suppose <code>data/measurements.csv</code>, relative to the notebook, contains a <code>score</code> column:</p>
+<pre><code>dat &lt;- read.csv(&quot;data/measurements.csv&quot;, check.names = FALSE)
+str(dat)
+mean(dat$score, na.rm = TRUE)
+write.csv(dat, &quot;measurements-clean.csv&quot;, row.names = FALSE)
+getwd()                      # Actual working directory
+file.exists(&quot;data/measurements.csv&quot;)
+</code></pre>
+<p>A new session starts in the saved document’s directory; check the actual directory in the inspector. <code>write.csv()</code> writes to the named path, so choose the output name deliberately before rerunning. If delimiters, encoding or inferred column types are wrong, inspect the file and <code>str(dat)</code> before calculating.</p>
+<h2 id="section-4">Plots, functions and random numbers</h2>
+<pre><code>plot(values, type = &quot;b&quot;, xlab = &quot;Index&quot;, ylab = &quot;Value&quot;)
+center &lt;- function(x) {
+  x - mean(x, na.rm = TRUE)
+}
+center(values)               # -6 0 6
+set.seed(42)                 # Set the random starting point
+sample(1:10, 3)              # Repeating from set.seed(42) reproduces it
+</code></pre>
+<p>Base plots appear in chunk results. Record a seed for random sampling or simulation, and record the data and package versions used by a report.</p>
+<h2 id="section-5">Packages and help</h2>
+<pre><code># After installing a package, load it in each new session
+library(ggplot2)
+# Or call a function by namespace
+ggplot2::ggplot(dat, ggplot2::aes(group, score)) +
+  ggplot2::geom_point()
+</code></pre>
+<p>Installation and loading are separate. Use Packages → Install in the inspector to choose CRAN or a local file. Installation is usually done once; document code uses <code>library()</code> or <code>package::function()</code>. Search function documentation in the inspector, or use <code>help(&quot;mean&quot;)</code> in an external R environment.</p>
+<h2 id="section-6">Read common errors</h2>
+<div class="table-scroll"><table><thead><tr><th>Message or symptom</th><th>What to check</th></tr></thead><tbody><tr><td>object &#x27;x&#x27; not found</td><td>Spelling and case; run the chunk creating x; include that code when rendering</td></tr><tr><td>could not find function</td><td>Function spelling, package installation/loading, or use package::function</td></tr><tr><td>cannot open file</td><td>Use getwd() and file.exists() to check directory and relative path</td></tr><tr><td>unexpected symbol / end of input</td><td>Quotes, commas, parentheses and closing fences</td></tr><tr><td>Mean returns NA</td><td>Check missing values; use na.rm = TRUE when appropriate</td></tr></tbody></table></div>
+<p>For a structured language introduction, see <a href="https://cran.r-project.org/doc/manuals/r-release/R-intro.html" target="_blank" rel="noopener">An Introduction to R</a>.</p></main></body></html>

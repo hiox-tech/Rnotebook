@@ -1,0 +1,835 @@
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+Find.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+Find.swift
+@@ -83,17 +83,19 @@
+         // The tables' `</>` raw-editing buttons ride the same margin pass, and
+         // step left of the numbers when both are in it. See
+         // EditorTextView+TableRawButton.
+-        drawTableRawButtons(in: rect, chrome: chrome)
+-        drawCodeCopyButtons(in: rect, chrome: chrome)
+-        // A wrapped table cell's real characters are hidden at ~zero width, so
+-        // AppKit's caret and highlight land nowhere near the text the user sees
+-        // — the cell draws its own. Same pass, same reason: behind the glyphs.
+-        // See EditorTextView+TableCellCaret.
+-        drawWrappedCellChrome(in: rect)
+-        // The active cell's row and column handles, and the outline around
+-        // whichever cell a table context menu is acting on.
+-        // See EditorTextView+TableHandles.
+-        drawTableHandles(in: rect, chrome: chrome)
++        if viewMode != .source {
++            drawTableRawButtons(in: rect, chrome: chrome)
++            drawCodeCopyButtons(in: rect, chrome: chrome)
++            // A wrapped table cell's real characters are hidden at ~zero width, so
++            // AppKit's caret and highlight land nowhere near the text the user sees
++            // — the cell draws its own. Same pass, same reason: behind the glyphs.
++            // See EditorTextView+TableCellCaret.
++            drawWrappedCellChrome(in: rect)
++            // The active cell's row and column handles, and the outline around
++            // whichever cell a table context menu is acting on.
++            // See EditorTextView+TableHandles.
++            drawTableHandles(in: rect, chrome: chrome)
++        }
+         guard findActive, !findMatches.isEmpty, let tlm = textLayoutManager else { return }
+
+         let visible = viewportCharRange(tlm)
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+SelectionTracking.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+SelectionTracking.swift
+@@ -11,6 +11,9 @@
+         // text, so it has to repaint on every caret move, including the ones
+         // that bail out of restyling. Marks only the numbers' strip.
+         invalidateLineNumbers()
++        // Source has no active Markdown blocks to reveal. Re-styling here
++        // discards host syntax/row attributes and briefly reflows the viewport.
++        guard viewMode != .source else { return }
+         // A caret inside a table cell too wide for its column is drawn by hand,
+         // because AppKit's would sit on the cell's hidden characters rather than
+         // its visible text. See EditorTextView+TableCellCaret.
+@@ -56,6 +59,13 @@
+         let sel = selectedRange()
+         let rawOffset = sel.location
+         let newActiveIndex = blockIndexForRawOffset(rawOffset)
++        let emptyEndLine = sel.length == 0 && rawOffset == (textStorage?.length ?? -1)
++            && newActiveIndex.map { blocks[$0].range.length == 0 && blocks[$0].kind == .blank } == true
++        if emptyEndLine, newActiveIndex == activeBlockIndex {
++            typingAttributes = baseAttributes
++            if !suppressTypewriterCentering { scrollCursorToCenter() }
++            return
++        }
+
+         // Showing a table raw is a per-table request made with its `</>`
+         // button, so leaving the table takes it back — otherwise the next
+@@ -67,7 +77,7 @@
+             // Capture the flag now — it's reset synchronously after mouseDown
+             // returns, before this async block runs.
+             let fromMouse = suppressTypewriterCentering
+-            DispatchQueue.main.async { [weak self, fromMouse] in
++            let activate: @MainActor @Sendable () -> Void = { [weak self, fromMouse] in
+                 guard let self = self else { return }
+                 // Always clear the flag first. If we bail out below (a recompose is
+                 // mid-flight and will set the active block itself), leaving it set
+@@ -98,21 +108,41 @@
+                 // autoscroll-to-selection on stale layout).
+                 let loc = self.selectedRange().location
+                 let newIdx = self.blockIndexForRawOffset(loc)
++                let emptyEndLine = self.selectedRange().length == 0
++                    && loc == (self.textStorage?.length ?? -1)
++                    && newIdx.map { self.blocks[$0].range.length == 0 && self.blocks[$0].kind == .blank } == true
+                 // The table being left, if it was edited: aligned below, once
+                 // the blocks are restyled for where the caret now is.
+                 let leftTable = self.tableFormatPending
+                     ? self.activeBlockIndex.flatMap { $0 != newIdx ? $0 : nil } : nil
+                 if self.activeBlockIndex != newIdx { self.tableFormatPending = false }
+                 var dirty = IndexSet()
+-                if let n = newIdx { dirty.insert(n) }
++                if let n = newIdx, !emptyEndLine { dirty.insert(n) }
+                 var deferred = false
+                 if let old = self.activeBlockIndex, old != newIdx, old < self.blocks.count {
+-                    if let vis = self.syncStylingBlockRange(), vis.contains(old) {
+-                        dirty.insert(old)   // visible — restyle in place
+-                    } else {
+-                        self.setStyled(old, false)   // off screen — defer
+-                        deferred = true
++                    let block = self.blocks[old]
++                    let needsRestyle = !emptyEndLine || !SyntaxHighlighter.parse(block.content,
++                        linkDefinitions: self.linkDefState.definitions(for: block.content), features: self.markdownFeatures).isEmpty
++                    if needsRestyle {
++                        if self.syncStylingBlockRange()?.contains(old) == true {
++                            dirty.insert(old)   // visible — restyle in place
++                        } else {
++                            self.setStyled(old, false)   // off screen — defer
++                            deferred = true
++                        }
+                     }
++                }
++                if dirty.isEmpty {
++                    // The zero-length EOF block has no markup to reveal. In
++                    // particular, do not rewrite its preceding newline: that
++                    // changes TextKit's extra-line metrics after a click.
++                    self.activeBlockIndex = newIdx
++                    self.appliedCursorSpans = nil
++                    self.typingAttributes = self.baseAttributes
++                    if self.typewriterModeEnabled && !fromMouse { self.scrollCursorToCenter() }
++                    if deferred { self.scheduleProgressiveStyling() }
++                    if let leftTable { self.formatTableOnLeaving(leftTable) }
++                    return
+                 }
+                 let restyleStart = CFAbsoluteTimeGetCurrent()
+                 defer {
+@@ -134,6 +164,14 @@
+                 if deferred { self.scheduleProgressiveStyling() }
+                 if let leftTable { self.formatTableOnLeaving(leftTable) }
+             }
++            if emptyEndLine {
++                // TextKit creates the final empty insertion line from typing
++                // attributes. Do not paint that provisional geometry and then
++                // move it again in a queued paragraph restyle after the click.
++                activate()
++            } else {
++                DispatchQueue.main.async { activate() }
++            }
+             return
+         } else if newActiveIndex == activeBlockIndex {
+             // Same block — update active token (re-style to show/hide delimiters)
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+TableRawButton.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+TableRawButton.swift
+@@ -60,6 +60,7 @@
+     /// fresh one for the click/test paths.
+     func visibleTableRawButtons(using geometry: MarginChromeGeometry? = nil)
+         -> [(rect: NSRect, blockIndex: Int)] {
++        guard viewMode != .source else { return [] }
+         let geometry = geometry ?? marginChromeGeometry()
+         guard !geometry.tableHeaders.isEmpty else { return [] }
+
+@@ -157,6 +158,8 @@
+     /// sit within `lineNumberPadding` of where a number ends, so without this
+     /// they overlap it.
+     func linesCoveredByTableRawButtons(using geometry: MarginChromeGeometry? = nil) -> Set<Int> {
++        // Raw source never lends a line-number slot to rendered-table tools.
++        guard viewMode != .source else { return [] }
+         var covered = Set((revealedTableRawButtons(using: geometry)
+                            + revealedCodeCopyButtons(using: geometry))
+             .map { line(forOffset: blocks[$0.blockIndex].range.location) })
+@@ -316,15 +319,22 @@
+         if let existing = tableHoverTrackingArea { removeTrackingArea(existing) }
+         let area = NSTrackingArea(
+             rect: .zero,
+-            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
++            options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+             owner: self)
+         addTrackingArea(area)
+         tableHoverTrackingArea = area
+     }
+
+     public override func mouseMoved(with event: NSEvent) {
++        let point = convert(event.locationInWindow, from: nil)
++        if let cursor = embeddedViewCursor?(point) {
++            // NSTextView's full visible tracking area includes child views.
++            // Do not set its I-beam before applying a host child's cursor.
++            clearMarginHover()
++            cursor.set()
++            return
++        }
+         super.mouseMoved(with: event)
+-        let point = convert(event.locationInWindow, from: nil)
+         // One geometry pass shared by all three hover updates: each used to
+         // rescan the block list and walk the viewport itself, at event rate.
+         let chrome = marginChromeGeometry()
+@@ -333,8 +343,45 @@
+         updateCodeCopyHover(at: point, chrome: chrome)
+     }
+
++    public override func cursorUpdate(with event: NSEvent) {
++        if let cursor = embeddedViewCursor?(convert(event.locationInWindow, from: nil)) {
++            cursor.set()
++        } else {
++            super.cursorUpdate(with: event)
++        }
++    }
++
++    public override func resetCursorRects() {
++        guard let excluded = embeddedViewRects?(), !excluded.isEmpty else {
++            super.resetCursorRects()
++            return
++        }
++        // Do not leave NSTextView's full-viewport I-beam underneath host
++        // children. NSWindow can otherwise restore it after cursorUpdate.
++        var regions = [visibleRect]
++        for rect in excluded {
++            regions = regions.flatMap { region -> [NSRect] in
++                let hit = region.intersection(rect)
++                guard !hit.isEmpty else { return [region] }
++                return [NSRect(x: region.minX, y: region.minY, width: region.width, height: hit.minY - region.minY),
++                        NSRect(x: region.minX, y: hit.maxY, width: region.width, height: region.maxY - hit.maxY),
++                        NSRect(x: region.minX, y: hit.minY, width: hit.minX - region.minX, height: hit.height),
++                        NSRect(x: hit.maxX, y: hit.minY, width: region.maxX - hit.maxX, height: hit.height)]
++                    .filter { !$0.isEmpty }
++            }
++        }
++        for region in regions { addCursorRect(region, cursor: .iBeam) }
++    }
++
+     public override func mouseExited(with event: NSEvent) {
+         super.mouseExited(with: event)
++        clearMarginHover()
++    }
++
++    /// A host child can own a mouse-move without leaving our tracking area.
++    /// Clear only our chrome; forwarding that move to NSTextView.mouseExited
++    /// makes AppKit read trackingArea from an event that has no tracking data.
++    private func clearMarginHover() {
+         guard hoveredTableBlock != nil || tableRawButtonHovered
+                 || hoveredTableHandle != nil
+                 || hoveredCodeBlock != nil || codeCopyButtonHovered else { return }
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView.swift
+@@ -39,6 +39,23 @@
+     /// See EditorTextView+ImageAttachments.
+     public var requestSaveForAttachment: ((@escaping (Bool) -> Void) -> Void)?
+
++    /// Optional host-owned Markdown representation for a pasteboard. Applied
++    /// after native image/list/cell handling, before AppKit imports rich text.
++    /// Nil leaves the upstream paste path unchanged.
++    public var markdownPasteboardText: ((NSPasteboard) -> String?)?
++
++    /// Optional cursor ownership for embedded host views. Points use editor
++    /// coordinates; nil keeps native editor cursor and hover behavior.
++    public var embeddedViewCursor: ((NSPoint) -> NSCursor?)?
++    /// Child regions excluded from the editor's full-surface I-beam rectangle.
++    /// Nil keeps NSTextView's native cursor rectangles.
++    public var embeddedViewRects: (() -> [NSRect])?
++
++    /// Optional source-mode metrics shared by block styling and typing. The
++    /// host supplies font/paragraph attributes before the native edit layout.
++    /// Nil retains upstream source and typing presentation.
++    public var sourcePresentationAttributes: ((NSFont) -> [NSAttributedString.Key: Any])?
++
+     // MARK: - Find
+
+     /// Character ranges of the current search's matches, in raw/display index
+@@ -342,6 +359,14 @@
+     /// domain (and from each other under parallel execution).
+     public var themeDefaults: UserDefaults = .standard
+
++    /// Optional per-editor application accent. This changes selection drawing,
++    /// never document attributes or syntax colors; nil keeps upstream themes.
++    public var selectionAccentColor: NSColor? {
++        didSet {
++            applySelectionColors()
++        }
++    }
++
+     /// The persisted General-row values: what `applyTheme` saves, and what the
+     /// active general theme's overrides and the zoom are applied *to*. `theme`
+     /// is this after `resolveTheme()`, so neither a theme's font nor a zoom step
+@@ -813,7 +838,8 @@
+     /// opaque stays legible (it is what Xcode does). Add 8-digit hex only if a
+     /// theme actually wants translucency.
+     var selectionHighlightColor: NSColor {
+-        generalTheme.selection.flatMap(NSColor.init(hex:))
++        if let selectionAccentColor { return selectionAccentColor.withAlphaComponent(0.3) }
++        return generalTheme.selection.flatMap(NSColor.init(hex:))
+             ?? .systemOrange.withAlphaComponent(0.3)
+     }
+
+@@ -913,7 +939,8 @@
+     }
+
+     var baseAttributes: [NSAttributedString.Key: Any] {
+-        [
++        if viewMode == .source, sourcePresentationAttributes != nil { return sourceAttributes }
++        return [
+             .font: bodyFont,
+             .foregroundColor: foregroundColor,
+             .paragraphStyle: bodyParagraphStyle,
+@@ -1071,11 +1098,26 @@
+     public func applyChromeColors() {
+         backgroundColor = editorBackgroundColor
+         insertionPointColor = cursorColor
+-        selectedTextAttributes = [
+-            .backgroundColor: selectionHighlightColor,
+-            .foregroundColor: foregroundColor,
+-        ]
++        applySelectionColors()
+         typingAttributes = baseAttributes
++    }
++
++    private func applySelectionColors() {
++        effectiveAppearance.performAsCurrentDrawingAppearance {
++            let attributes: [NSAttributedString.Key: Any] = [
++                .backgroundColor: selectionHighlightColor,
++                .foregroundColor: foregroundColor,
++            ]
++            let cachedChanged = defaultSelectedTextAttributes[.backgroundColor] as? NSColor != attributes[.backgroundColor] as? NSColor
++                || defaultSelectedTextAttributes[.foregroundColor] as? NSColor != attributes[.foregroundColor] as? NSColor
++            let selectionChanged = selectedTextAttributes[.backgroundColor] as? NSColor != attributes[.backgroundColor] as? NSColor
++                || selectedTextAttributes[.foregroundColor] as? NSColor != attributes[.foregroundColor] as? NSColor
++            defaultSelectedTextAttributes = attributes
++            if !tableCellHighlightSuppressed && selectionChanged {
++                selectedTextAttributes = attributes
++                needsDisplay = true
++            } else if cachedChanged { needsDisplay = true }
++        }
+     }
+
+     /// Re-render when the system appearance (light ↔ dark) changes.
+@@ -1139,6 +1181,14 @@
+     /// that the resulting selection change does not re-center the viewport —
+     /// centering when the user merely clicks somewhere feels glitchy.
+     public override func mouseDown(with event: NSEvent) {
++        // Source uses native text hit-testing, including literal table pipes.
++        if viewMode == .source {
++            suppressTypewriterCentering = true
++            defer { suppressTypewriterCentering = false }
++            if trackSourceCaretDrag(with: event) { return }
++            super.mouseDown(with: event)
++            return
++        }
+         // Field diagnostics for the intermittent "click/drag to select does
+         // nothing" report (backlog, 7/14 occurrences): AppKit suppresses
+         // selection notifications while `stillSelecting`, so a failed drag
+@@ -1275,6 +1325,46 @@
+         traceEdit("mouseDown done")
+     }
+
++    /// AppKit can abandon an empty-caret gesture when its first drag arrives
++    /// after the press-and-hold delay. Keep tracking this narrow source case;
++    /// leave selected-text dragging, modifiers, IME and multi-clicks native.
++    private func trackSourceCaretDrag(with event: NSEvent) -> Bool {
++        guard isSelectable, event.clickCount == 1, selectedRanges.count == 1,
++              selectedRange().length == 0, !hasMarkedText(),
++              event.modifierFlags.intersection([.shift, .option, .command, .control]).isEmpty,
++              let window else { return false }
++        if window.firstResponder !== self { window.makeFirstResponder(self) }
++        let startedKey = window.isKeyWindow
++        func hit(_ event: NSEvent) -> Int {
++            min((string as NSString).length,
++                characterIndexForInsertion(at: convert(event.locationInWindow, from: nil)))
++        }
++        let anchor = hit(event)
++        var end = anchor
++        var lastDrag: NSEvent?
++        func select(_ tracking: Bool) {
++            setSelectedRanges([NSValue(range: NSRange(location: min(anchor, end), length: abs(end - anchor)))],
++                affinity: end < anchor ? .upstream : .downstream, stillSelecting: tracking)
++        }
++        select(true)
++        while self.window === window, (!startedKey || window.isKeyWindow), viewMode == .source {
++            if let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp],
++                until: Date(timeIntervalSinceNow: 0.05), inMode: .eventTracking, dequeue: true) {
++                if next.type == .leftMouseUp { break }
++                lastDrag = next
++                autoscroll(with: next)
++                end = hit(next); select(true)
++            } else if let drag = lastDrag,
++                      !visibleRect.contains(convert(drag.locationInWindow, from: nil)) {
++                // Continue scrolling while the pointer rests beyond the viewport.
++                autoscroll(with: drag)
++                end = hit(drag); select(true)
++            }
++        }
++        select(false)
++        return true
++    }
++
+     /// Drag ticks: while a drag-select is in flight AppKit updates the
+     /// selection with `stillSelecting == true` and suppresses the delegate
+     /// notification, so `selectionDidChange` never sees a failed or clamped
+@@ -1287,6 +1377,10 @@
+     public override func setSelectedRanges(_ ranges: [NSValue],
+                                            affinity: NSSelectionAffinity,
+                                            stillSelecting: Bool) {
++        if viewMode == .source {
++            super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
++            return
++        }
+         if stillSelecting, let first = ranges.first?.rangeValue {
+             traceEdit("dragTick sel'={\(first.location),\(first.length)}")
+         }
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+LineNumbers.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+LineNumbers.swift
+@@ -53,7 +53,10 @@
+     /// same as the rest of the pipeline). An offset past the end reports the
+     /// last line; a negative one reports line 1.
+     public func line(forOffset offset: Int) -> Int {
+-        let starts = lineStarts
++        lineNumber(forOffset: offset, in: lineStarts)
++    }
++
++    private func lineNumber(forOffset offset: Int, in starts: [Int]) -> Int {
+         let target = max(0, offset)
+         // Largest index whose start is still <= target.
+         var low = 0
+@@ -63,6 +66,27 @@
+             if starts[mid] <= target { low = mid } else { high = mid - 1 }
+         }
+         return low + 1
++    }
++
++    /// IME edits are visible in storage before rawSource is committed. Splice
++    /// only that provisional edit into the chrome's line map; do not publish
++    /// the composition or restyle its marked range.
++    var lineNumberLineStarts: [Int] {
++        guard viewMode == .source, hasMarkedText(),
++              let storage = textStorage as? EditorTextStorage,
++              let edit = storage.pendingEdit else { return lineStarts }
++        let replacementLength = edit.oldRange.length + edit.delta
++        guard edit.oldRange.upperBound <= rawSource.utf16.count,
++              replacementLength >= 0,
++              edit.oldRange.location + replacementLength <= storage.length else { return lineStarts }
++        var starts = lineStarts.prefix { $0 <= edit.oldRange.location }.map { $0 }
++        let replacement = (storage.string as NSString).substring(with:
++            NSRange(location: edit.oldRange.location, length: replacementLength))
++        for (index, unit) in replacement.utf16.enumerated() where unit == 0x000A {
++            starts.append(edit.oldRange.location + index + 1)
++        }
++        starts.append(contentsOf: lineStarts.lazy.filter { $0 > edit.oldRange.upperBound }.map { $0 + edit.delta })
++        return starts
+     }
+
+     /// Character offset of the start of 1-indexed `line`, clamped to the
+@@ -153,12 +177,13 @@
+     /// The 1-indexed line spans the selection covers, one per selected range
+     /// (NSTextView allows several).
+     var selectedLineSpans: [ClosedRange<Int>] {
+-        selectedRanges.map { value in
++        let starts = lineNumberLineStarts
++        return selectedRanges.map { value in
+             let range = value.rangeValue
+-            let first = line(forOffset: range.location)
++            let first = lineNumber(forOffset: range.location, in: starts)
+             // A selection ending exactly at a line start stops short of that
+             // line, so measure the last character it actually covers.
+-            let last = range.length > 0 ? line(forOffset: range.upperBound - 1) : first
++            let last = range.length > 0 ? lineNumber(forOffset: range.upperBound - 1, in: starts) : first
+             return first...max(first, last)
+         }
+     }
+@@ -255,6 +280,8 @@
+     /// coordinates (so a wrapped line is numbered once, against its top line).
+     /// The number's own cap band is centered on it — see
+     /// `LineNumberStyle.digitCenterFromTop`.
++    /// Source mode instead carries the number's cap center at the text baseline,
++    /// so different code fonts and fixed row heights keep the baselines aligned.
+     ///
+     /// Walks the viewport the text view has *already* laid out. Forcing layout
+     /// instead (`.ensuresLayout`, or enumerating from the document start)
+@@ -271,6 +298,9 @@
+         // number, but drawing it would stack it on the neighbor's, so the
+         // visible sequence is allowed to skip.
+         let minimumDrawnHeight = bodyFont.pointSize / 2
++        let sourceNumberCapHeight = viewMode == .source ? lineNumberFont.capHeight : nil
++        let starts = lineNumberLineStarts
++        var drawnSourceLines = Set<Int>()
+         var lastLine = 0
+
+         tlm.enumerateTextLayoutFragments(from: viewport.location,
+@@ -281,6 +311,28 @@
+
+             let offset = tlm.offset(from: tlm.documentRange.location,
+                                     to: fragment.rangeInElement.location)
++            if let sourceNumberCapHeight {
++                // Walk actual visual rows, including the empty EOF row. A
++                // continuation or repeated provisional fragment must not own a
++                // second number for the same logical source line.
++                var previousBottom: CGFloat?
++                for row in fragment.textLineFragments {
++                    let rowOffset = offset + row.characterRange.location
++                    let number = self.lineNumber(forOffset: rowOffset, in: starts)
++                    let bounds = row.typographicBounds
++                    let top = row.characterRange.length == 0
++                        ? max(bounds.minY, previousBottom ?? bounds.minY) : bounds.minY
++                    previousBottom = max(previousBottom ?? bounds.maxY, top + bounds.height)
++                    guard rowOffset == starts[number - 1],
++                          drawnSourceLines.insert(number).inserted else { continue }
++                    let provisionalEmpty = row.characterRange.length == 0
++                        && (top > bounds.minY || bounds.height < firstLine.typographicBounds.height)
++                    let glyphY = provisionalEmpty ? firstLine.glyphOrigin.y : row.glyphOrigin.y
++                    let baseline = frame.minY + top + glyphY
++                    if baseline <= bottom { body(number, baseline - sourceNumberCapHeight / 2) }
++                }
++                return true
++            }
+             let line = self.line(forOffset: offset)
+             // The empty line after a trailing newline is no paragraph of its
+             // own: TextKit hangs it on the last fragment as an extra, empty line
+@@ -290,10 +342,8 @@
+                 let lines = fragment.textLineFragments
+                 if lines.count > 1, let extra = lines.last, extra.characterRange.length == 0,
+                    fragment.rangeInElement.endLocation.compare(tlm.documentRange.endLocation) == .orderedSame {
+-                    // TextKit's box for this line is provisional until the caret
+-                    // goes there: after an empty paragraph it sits 16 pt down,
+-                    // overlapping the line above (measured). The line can never
+-                    // start above the previous one's bottom, so clamp it there.
++                    // Preserve the notebook cap-band rule. Source EOF rows
++                    // are handled by the separate display-line walk above.
+                     let above = lines[lines.count - 2].typographicBounds.maxY
+                     let top = max(extra.typographicBounds.minY, above)
+                     let baseline = frame.minY + top + self.bodyFont.ascender
+@@ -349,7 +399,7 @@
+     /// and the cap winning is the point — so when the margin can't hold the
+     /// numbers they step aside instead.
+     var lineNumbersRequiredInset: CGFloat {
+-        let digits = LineNumberRulerView.digitCount(lineStarts.count)
++        let digits = LineNumberRulerView.digitCount(lineNumberLineStarts.count)
+         let padding = textContainer?.lineFragmentPadding ?? 0
+         return lineNumberStyle.digitWidth * CGFloat(digits + 1)
+             + Self.lineNumberPadding - padding
+@@ -537,7 +587,7 @@
+         rect.fill()
+
+         let style = editor.lineNumberStyle
+-        let needed = Self.thickness(digits: Self.digitCount(editor.lineStarts.count),
++        let needed = Self.thickness(digits: Self.digitCount(editor.lineNumberLineStarts.count),
+                                     font: editor.lineNumberFont)
+         if abs(needed - ruleThickness) > 0.5 {
+             // Re-tiles the scroll view, which can't happen mid-draw — land it on
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+CodeCopyButton.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+CodeCopyButton.swift
+@@ -13,6 +13,28 @@
+ // Source mode draws no code box for it to belong to.
+
+ extension EditorTextView {
++
++    /// Read-only anchors for host-owned companion actions. The native copy
++    /// drawing, hit testing, hover and clipboard path remain entirely here.
++    /// Coordinates are in this text view; source mode returns no anchors.
++    public func codeBlockMarginAnchors() -> [(range: NSRange, copyRect: NSRect, hoverRect: NSRect)] {
++        visibleCodeCopyButtons().compactMap { rect, index in
++            guard let rows = blockRowsRect(blockIndex: index) else { return nil }
++            return (blocks[index].range, rect,
++                    NSRect(x: rect.minX - 4, y: rows.minY,
++                           width: max(0, bounds.maxX - rect.minX + 4), height: rows.height)
++                        .union(codeCopyButtonHitBox(rect)))
++        }
++    }
++
++    /// Native slot and palette for companions whose block starts above the viewport.
++    public var codeBlockMarginStyle: (slot: NSRect, ink: NSColor, hoverFill: NSColor, background: NSColor) {
++        let size = codeCopyButtonSize
++        let x = textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0)
++            - Self.lineNumberPadding - lineNumberStyle.digitWidth - size
++        return (NSRect(x: x, y: 0, width: size, height: size),
++                isDarkAppearance ? syntaxDimColor : .secondaryLabelColor, marginButtonHoverFill, codeBlockBackground)
++    }
+
+     // MARK: - Geometry
+
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/Rendering/EditorTextView+ListRendering.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/Rendering/EditorTextView+ListRendering.swift
+@@ -244,13 +244,21 @@
+                 result.addAttribute(.foregroundColor, value: NSColor.clear, range: before)
+             }
+             // Dot overlay on the (hidden) bullet character.
+-            applyOverlay(bulletOverlay(), anchor: NSRange(location: markerAbs, length: 1),
+-                         in: result)
+-            // Dim the trailing space(s) after the bullet.
++            let overlay = bulletOverlay()
++            let anchor = NSRange(location: markerAbs, length: 1)
++            applyOverlay(overlay, anchor: anchor, in: result)
++            // A fixed marker must reserve its full slot even during the initial
++            // zero-width host layout. General image overlays clamp to the column;
++            // that would permanently give a cached list marker zero advance.
++            let gap = (" " as NSString).size(withAttributes: [.font: bodyFont]).width
++            result.addAttribute(.kern, value: overlay.bounds.width + gap, range: anchor)
++            // Source permits several spaces (or a tab) after the marker. Render
++            // one gap, supplied above, so first and wrapped content lines align.
+             let afterStart = markerAbs + 1
+             if afterStart < dr.upperBound {
+-                result.addAttribute(.foregroundColor, value: syntaxDimColor,
+-                                    range: NSRange(location: afterStart, length: dr.upperBound - afterStart))
++                let whitespace = NSRange(location: afterStart, length: dr.upperBound - afterStart)
++                result.addAttribute(.font, value: hiddenFont, range: whitespace)
++                result.addAttribute(.foregroundColor, value: NSColor.clear, range: whitespace)
+             }
+             return
+         }
+@@ -284,8 +292,10 @@
+         }
+
+         // Circle overlay on the (hidden) `[` character
+-        applyOverlay(checkboxOverlay(checked: checkbox == .checked),
+-                     anchor: NSRange(location: cbStart, length: 1), in: result)
++        let overlay = checkboxOverlay(checked: checkbox == .checked)
++        let anchor = NSRange(location: cbStart, length: 1)
++        applyOverlay(overlay, anchor: anchor, in: result)
++        result.addAttribute(.kern, value: overlay.bounds.width, range: anchor)
+
+         // Hide remaining checkbox characters (` ]`/`x]`) with zero-width + clear
+         let hideStart = cbStart + 1
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/Editing/EditorTextView+TableCopy.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/Editing/EditorTextView+TableCopy.swift
+@@ -55,7 +55,11 @@
+         // Cells, from this editor or a spreadsheet; see `pasteTableCells`.
+         if pasteTableCells(from: NSPasteboard.general) { return }
+         let before = selectedRange()
+-        super.paste(sender)
++        if let markdown = markdownPasteboardText?(NSPasteboard.general) {
++            insertText(markdown, replacementRange: before)
++        } else {
++            super.paste(sender)
++        }
+         let after = selectedRange()
+         let start = min(before.location, after.location)
+         normalizeTableDelimiters(in: NSRange(location: start,
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/Rendering/EditorTextView+Rendering.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/Rendering/EditorTextView+Rendering.swift
+@@ -1071,15 +1071,23 @@
+
+     /// Plain monospaced styling for source mode: the raw markdown with no
+     /// markup interpretation (no hidden delimiters, overlays, or decorations).
+-    func sourceStyled(_ markdown: String) -> NSAttributedString {
++    var sourceAttributes: [NSAttributedString.Key: Any] {
+         let mono = theme.monospaceFont(ofSize: bodyFont.pointSize)
+         let ps = NSMutableParagraphStyle()
+         ps.lineSpacing = theme.lineSpacing
+-        return NSAttributedString(string: markdown, attributes: [
++        var attributes: [NSAttributedString.Key: Any] = [
+             .font: mono,
+             .foregroundColor: foregroundColor,
+             .paragraphStyle: ps,
+-        ])
++        ]
++        if let presentation = sourcePresentationAttributes?(mono) {
++            attributes.merge(presentation) { _, supplied in supplied }
++        }
++        return attributes
++    }
++
++    func sourceStyled(_ markdown: String) -> NSAttributedString {
++        NSAttributedString(string: markdown, attributes: sourceAttributes)
+     }
+
+     // MARK: - In-Place Block Restyling
+@@ -1173,6 +1181,15 @@
+               activeIdx < blocks.count else { return }
+
+         let block = blocks[activeIdx]
++        // An active fenced block reveals its entire source, including both
++        // fences. Moving within it never changes delimiter visibility. A
++        // line-based cursor signature would rewrite every row's attributes
++        // and briefly collapse TextKit's invalidated fragments on each click.
++        // Edits and block activation already restyle through recomposeDirty.
++        if block.kind == .fence {
++            typingAttributes = baseAttributes
++            return
++        }
+         let cursorInBlock = max(0, selectedRange().location - block.range.location)
+
+         let continuationDepth = listContinuationDepth(ofBlock: activeIdx)
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+EditFlow.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+EditFlow.swift
+@@ -9,6 +9,7 @@
+         hasDeferredMarkedTextUndo = true
+         super.setMarkedText(string, selectedRange: selectedRange,
+                             replacementRange: replacementRange)
++        if viewMode == .source { invalidateLineNumbers() }
+     }
+
+     /// NSTextView copies the attributes next to the caret into `typingAttributes`.
+@@ -23,6 +24,10 @@
+         get { super.typingAttributes }
+         set {
+             var attrs = newValue
++            if viewMode == .source,
++               let presentation = sourcePresentationAttributes?(theme.monospaceFont(ofSize: bodyFont.pointSize)) {
++                attrs.merge(presentation) { _, supplied in supplied }
++            }
+             if let font = attrs[.font] as? NSFont, font.pointSize < 1.0 {
+                 attrs[.font] = bodyFont
+                 if (attrs[.foregroundColor] as? NSColor) == .clear {
+@@ -154,6 +159,13 @@
+         }
+         recordDeferredMarkedTextUndoIfNeeded()
+         syncRawSourceFromDisplay()
++        // Recomposition invalidates a fence's several row fragments together.
++        // Settle the existing bounded viewport/caret region before measuring
++        // the caret, so no provisional code-row position is painted.
++        if viewMode == .edit, let active = activeBlockIndex,
++           active < blocks.count, blocks[active].kind == .fence {
++            ensureCaretRegionLaidOut()
++        }
+         noteTableEdit()
+         document?.updateChangeCount(.changeDone)
+         scrollCursorToCenter()
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/Diagrams/MermaidRenderer.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/Diagrams/MermaidRenderer.swift
+@@ -1,5 +1,6 @@
+ import AppKit
+ import JavaScriptCore
++import CryptoKit
+
+ /// Colours a diagram is drawn with. beautiful-mermaid derives every internal
+ /// custom property (`--_node-fill`, `--_line`, `--_arrow`, …) from these two by
+@@ -80,6 +81,16 @@
+
+     /// Whether the payload is loaded and rendering can be attempted.
+     public var isReady: Bool { render != nil }
++
++    /// Load a pinned runtime shipped with the host, without downloading or
++    /// writing to the upstream app's Application Support directory.
++    @discardableResult public func loadBundled(from directory: URL, scriptSHA256: String) -> Bool {
++        let file = directory.appendingPathComponent(MermaidRelease.payload.sentinelFile)
++        guard let data = try? Data(contentsOf: file),
++              SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == scriptSHA256 else { return false }
++        load(dir: directory)
++        return isReady
++    }
+
+     /// The installer's current state, for Settings to surface (downloading %,
+     /// verifying, ready, failed → retry).
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+TypewriterScroll.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+TypewriterScroll.swift
+@@ -156,8 +156,17 @@
+     /// selection. See `centerViewportOnCaret` for why this needs a settle-pass
+     /// loop (TextKit 2 height estimates above the target can throw off the
+     /// first scroll).
+-    public func scrollCharacterToTop(_ offset: Int) {
++    public func scrollCharacterToTop(_ offset: Int, preservingHorizontalPosition: Bool = false) {
+         guard let scrollView = enclosingScrollView else { return }
++        // An edge ruler can give the clip a negative X origin. A vertical
++        // overview gesture must preserve it instead of hiding the gutter.
++        let horizontalOrigin = preservingHorizontalPosition ? scrollView.contentView.bounds.origin.x : 0
++        defer {
++            if preservingHorizontalPosition, scrollView.contentView.bounds.origin.x != horizontalOrigin {
++                scrollView.contentView.scroll(to: NSPoint(x: horizontalOrigin, y: scrollView.contentView.bounds.origin.y))
++                scrollView.reflectScrolledClipView(scrollView.contentView)
++            }
++        }
+         // The target's absolute Y is only trustworthy once everything ABOVE it
+         // is laid out for real: a Y computed against estimates lands wrong, and
+         // then *keeps shifting* as idle promotion realizes those estimates —
+@@ -186,7 +195,7 @@
+         // at the top of the clip, which is behind the bars.
+         let clampedY = clampedScrollY(rect.minY + textContainerOrigin.y - viewportTopInset)
+
+-        scrollView.contentView.scroll(to: NSPoint(x: 0, y: clampedY))
++        scrollView.contentView.scroll(to: NSPoint(x: horizontalOrigin, y: clampedY))
+         scrollView.reflectScrolledClipView(scrollView.contentView)
+
+         guard let tlm = textLayoutManager else { return }
+@@ -195,7 +204,7 @@
+             guard let settled = lineRect(forCharacterAt: offset) else { return }
+             let settledY = clampedScrollY(settled.minY + textContainerOrigin.y - viewportTopInset)
+             guard abs(settledY - scrollView.contentView.bounds.origin.y) > 1 else { return }
+-            scrollView.contentView.scroll(to: NSPoint(x: 0, y: settledY))
++            scrollView.contentView.scroll(to: NSPoint(x: horizontalOrigin, y: settledY))
+             scrollView.reflectScrolledClipView(scrollView.contentView)
+         }
+     }
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/Diagrams/MermaidSVGFlattener.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/Diagrams/MermaidSVGFlattener.swift
+@@ -28,7 +28,55 @@
+     static func flatten(_ svg: String) -> String {
+         let declarations = collectDeclarations(svg)
+         let resolved = substituteColorFunctions(in: svg, declarations: declarations)
+-        return foldTextBaselineShift(in: inlineMarkers(in: resolved))
++        return foldTextBaselineShift(in: inlineMarkers(in: inlineCompoundClassPaint(in: resolved)))
++    }
++
++    /// CoreSVG applies simple class rules but drops the pinned XY renderer's
++    /// compound selectors (e.g. .xychart-bar.xychart-color-0). Materialize their
++    /// resolved paint so bars/lines retain their palette in native images.
++    private static func inlineCompoundClassPaint(in svg: String) -> String {
++        struct Rule {
++            let tag: String
++            let classes: Set<String>
++            let paint: [(String, String)]
++            var specificity: Int { classes.count * 10 + (tag.isEmpty ? 0 : 1) }
++        }
++        let properties: Set<String> = ["fill", "stroke", "stroke-width", "opacity"]
++        var rules: [Rule] = []
++        for block in allGroups(#"<style>(.*?)</style>"#, in: svg) {
++            for pair in allPairs(#"([^{}]+)\{([^{}]*)\}"#, in: block) {
++                let paint = allPairs(#"([\w-]+)\s*:\s*([^;]+)"#, in: pair.1)
++                    .filter { properties.contains($0.0) }
++                guard !paint.isEmpty else { continue }
++                for selector in pair.0.split(separator: ",") {
++                    guard let match = allMatches(#"^\s*([A-Za-z][\w-]*)?((?:\.[\w-]+)+)\s*$"#, in: String(selector)).first else { continue }
++                    let classes = Set(match[2].split(separator: ".").map(String.init))
++                    guard classes.count > 1 || !match[1].isEmpty else { continue }
++                    rules.append(Rule(tag: match[1], classes: classes, paint: paint))
++                }
++            }
++        }
++        guard !rules.isEmpty else { return svg }
++        // Stable cascade for equal specificity: later declarations win.
++        let ordered = rules.enumerated().sorted {
++            $0.element.specificity == $1.element.specificity ? $0.offset < $1.offset : $0.element.specificity < $1.element.specificity
++        }.map(\.element)
++        return replaceMatches(#"<(?:path|rect|line|polyline|polygon|circle|ellipse|g|text)\b[^>]*\sclass="[^"]*"[^>]*>"#, in: svg) { tag in
++            let attrs = attributes(tag)
++            let classes = Set((attrs["class"] ?? "").split(whereSeparator: { $0.isWhitespace }).map(String.init))
++            let name = firstGroup(#"^<([\w-]+)"#, in: tag) ?? ""
++            var paint: [String: String] = [:]
++            for rule in ordered where (rule.tag.isEmpty || rule.tag == name) && rule.classes.isSubset(of: classes) {
++                for (property, value) in rule.paint where attrs[property] == nil { paint[property] = value.trimmingCharacters(in: .whitespaces) }
++            }
++            guard !paint.isEmpty else { return tag }
++            let index = tag.index(tag.endIndex, offsetBy: tag.hasSuffix("/>") ? -2 : -1)
++            let additions = paint.sorted { $0.key < $1.key }.map {
++                let value = $0.value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
++                return " \($0.key)=\"\(value)\""
++            }.joined()
++            return String(tag[..<index]) + additions + String(tag[index...])
++        }
+     }
+
+     // MARK: - Custom properties and color-mix()
+--- a/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+ContentWidth.swift
++++ b/ThirdParty/EdmundCore/Sources/EdmundCore/TextView/EditorTextView+ContentWidth.swift
+@@ -213,8 +213,14 @@
+         }
+         lastStyledContentWidth = width
+         let dirty = IndexSet(blocks.indices.filter {
+-            blocks[$0].kind == .table || blocks[$0].content.contains("![")
+-                || blocks[$0].content.localizedCaseInsensitiveContains("<img")
++            let block = blocks[$0]
++            if viewMode != .source, block.kind == .fence {
++                let opening = block.content.prefix { !$0.isNewline }
++                let language = opening.drop { $0.isWhitespace || $0 == "`" || $0 == "~" }
++                if MermaidSyntax.matches(language: String(language)) { return true }
++            }
++            return block.kind == .table || block.content.contains("![")
++                || block.content.localizedCaseInsensitiveContains("<img")
+         })
+         guard !dirty.isEmpty else { return }
+         stylingOnly {

@@ -1,0 +1,655 @@
+import AppKit
+
+nonisolated(unsafe) private let reusableCalloutHeaderOverlayCache: NSCache<
+    NSString,
+    FragmentOverlay
+> = {
+    let cache = NSCache<NSString, FragmentOverlay>()
+    cache.countLimit = 128
+    return cache
+}()
+
+nonisolated(unsafe) private let reusableCalloutPathOverlayCache: NSCache<
+    NSString,
+    FragmentOverlay
+> = {
+    let cache = NSCache<NSString, FragmentOverlay>()
+    cache.countLimit = 64
+    return cache
+}()
+
+/// Cached styled bodies for inactive callouts, keyed by the styling
+/// environment (see `stylingEnvironmentKey`) plus the stripped body source.
+/// A callout is a single block, so without this every caret move elsewhere
+/// re-parses (BlockParser) and re-styles (styleBlock per inner block) the
+/// whole body. The splicing of the styled body back onto the real characters
+/// still runs per restyle — only the pure styling is cached.
+nonisolated(unsafe) private let calloutBodyStyleCache: NSCache<
+    NSString,
+    NSAttributedString
+> = {
+    let cache = NSCache<NSString, NSAttributedString>()
+    cache.countLimit = 32
+    return cache
+}()
+
+// MARK: - Callout Rendering
+//
+// A callout is a block quote whose first line is `[!type]` (case-insensitive).
+// swift-markdown gives us a plain `.blockquote` span; here we detect the marker
+// and render the header line as an icon + title image (hiding the raw
+// `[!type] …` source), with a customizable colored border + tinted background.
+// Colors resolve per light/dark appearance. While the cursor is inside the
+// callout the raw, editable marker is shown instead.
+
+extension EditorTextView {
+
+    /// A detected callout on a block-quote span, with ranges mapped to absolute
+    /// offsets within the block string.
+    struct CalloutInfo {
+        let marker: Callout.Marker
+        let style: CalloutStyle
+        /// `[ '[' … end-of-first-line )` — the marker plus any custom title.
+        let headerRange: NSRange
+        /// Capitalized type name, or the custom title if the header has one.
+        let title: String
+        /// When the header carries a custom title, the source range of that
+        /// title text (leading whitespace trimmed). Rendered as real, wrapping
+        /// text so a long title wraps inside the box instead of clipping. `nil`
+        /// for a default callout, whose synthesized type name isn't in the
+        /// source and stays a compact icon+name overlay.
+        let customTitleRange: NSRange?
+        /// Obsidian fold state (`[!note]-`/`+`), or nil when not collapsible or
+        /// the collapsible-callout feature is off. Drives the header chevron.
+        let fold: Callout.FoldState?
+    }
+
+    /// Returns callout info if `span` (a `.blockquote`) begins with a known
+    /// `[!type]` marker on its first line, else `nil` (a plain block quote).
+    func calloutInfo(forBlockquote span: SyntaxHighlighter.Span, markdown: String) -> CalloutInfo? {
+        // Callouts off → treat every `> [!type]` as a plain block quote.
+        guard markdownFeatures.contains(.callout) else { return nil }
+        guard let firstDelim = span.delimiterRanges.min(by: { $0.location < $1.location })
+        else { return nil }
+        let ns = markdown as NSString
+        let contentStart = firstDelim.upperBound
+        let blockEnd = min(span.fullRange.upperBound, ns.length)
+        guard contentStart < blockEnd else { return nil }
+
+        let searchRange = NSRange(location: contentStart, length: blockEnd - contentStart)
+        let nl = ns.range(of: "\n", options: [], range: searchRange)
+        let lineEnd = nl.location == NSNotFound ? blockEnd : nl.location
+        let firstLine = ns.substring(with: NSRange(location: contentStart, length: lineEnd - contentStart))
+
+        guard let rel = Callout.parseMarker(firstLine),
+              let style = Callout.style(for: rel.type, overrides: calloutStyleOverrides) else { return nil }
+        // Obsidian-only callout types are non-GFM: with the master switch off
+        // (calloutExtendedTypes cleared) only the 5 GFM alert types render;
+        // the rest fall back to a plain block quote.
+        guard Callout.isGFMAlert(rel.type)
+              || markdownFeatures.contains(.calloutExtendedTypes) else { return nil }
+
+        func abs(_ r: NSRange) -> NSRange { NSRange(location: r.location + contentStart, length: r.length) }
+        // The fold marker (`-`/`+`) counts only when the feature is on; otherwise
+        // it stays literal and falls into the custom title, as before.
+        let collapsible = markdownFeatures.contains(.collapsibleCallout)
+        let fold = collapsible ? rel.fold : nil
+        let marker = Callout.Marker(type: rel.type,
+                                    openBracket: abs(rel.openBracket),
+                                    typeRange: abs(rel.typeRange),
+                                    closeBracket: abs(rel.closeBracket),
+                                    fold: fold,
+                                    foldRange: fold != nil ? rel.foldRange.map(abs) : nil)
+
+        // Skip the fold char so `[!note]- Title` reads "Title", not "- Title".
+        let titleStart = marker.foldRange?.upperBound ?? marker.closeBracket.upperBound
+        let customRaw = titleStart < lineEnd
+            ? ns.substring(with: NSRange(location: titleStart, length: lineEnd - titleStart)) : ""
+        let title = Callout.title(type: marker.type, customTitle: customRaw)
+        let headerRange = NSRange(location: marker.openBracket.location,
+                                  length: lineEnd - marker.openBracket.location)
+
+        // A custom title is the real source text after `]` (leading spaces
+        // skipped). Rendered as live wrapping text; absent → default callout.
+        var customTitleRange: NSRange?
+        if !customRaw.trimmingCharacters(in: .whitespaces).isEmpty {
+            var s = titleStart
+            while s < lineEnd, ns.character(at: s) == 0x20 { s += 1 }
+            customTitleRange = NSRange(location: s, length: lineEnd - s)
+        }
+
+        return CalloutInfo(marker: marker, style: style, headerRange: headerRange,
+                           title: title, customTitleRange: customTitleRange, fold: fold)
+    }
+
+    /// Applies callout styling: the box, the icon + title header image, and the
+    /// recursively-rendered body. Only called for an *inactive* callout — when
+    /// the cursor is inside, the caller renders the raw `>` source instead so the
+    /// markers stay editable.
+    func styleCalloutContent(_ result: NSMutableAttributedString,
+                             span: SyntaxHighlighter.Span,
+                             info: CalloutInfo) {
+        guard span.fullRange.upperBound <= result.length else { return }
+        let c = resolvedCalloutColors(info.style)
+
+        // The box is drawn by DecoratedTextLayoutFragment behind every
+        // paragraph of the callout; the fragments tile into one continuous box.
+        func box(bottomPad: CGFloat) -> BlockDecoration {
+            BlockDecoration(.box(background: c.background,
+                                 borderColor: c.border,
+                                 borderEdges: info.style.borderEdges,
+                                 borderWidth: info.style.borderWidth,
+                                 bottomPad: bottomPad))
+        }
+        result.addAttribute(.blockDecoration, value: box(bottomPad: 0),
+                            range: span.fullRange)
+        result.addAttribute(.paragraphStyle, value: calloutParagraphStyle(),
+                            range: span.fullRange)
+        // Bottom breathing room: the last line's box carries a bottomPad, which
+        // grows that fragment's frame (see layoutFragmentFrame). The extra space
+        // is genuine clickable text space below the last line — clicks there
+        // land on the callout, the next block tiles clear, and the box covers
+        // it — no dead zone, no trailing paragraph spacing.
+        let ns = result.string as NSString
+        var lastLineStart = span.fullRange.location
+        let nl = ns.range(of: "\n", options: .backwards,
+                          range: span.fullRange)
+        if nl.location != NSNotFound { lastLineStart = nl.upperBound }
+        let lastLine = NSRange(location: lastLineStart,
+                               length: span.fullRange.upperBound - lastLineStart)
+        result.addAttribute(.blockDecoration, value: box(bottomPad: calloutBottomPad),
+                            range: lastLine)
+
+        // End of the header (first) line, before any body lines.
+        let headerNL = ns.range(of: "\n", options: [], range: span.fullRange)
+        let headerLineEnd = headerNL.location == NSNotFound
+            ? span.fullRange.upperBound : headerNL.location
+
+        let header = info.headerRange
+        let headerLine = NSRange(location: span.fullRange.location,
+                                 length: headerLineEnd - span.fullRange.location)
+        let accentHex = info.style.accentHex(dark: isDarkAppearance)
+        let accentCacheKey = NSColor(hex: accentHex) == nil
+            ? renderingCacheColorKey(c.accent)
+            : accentHex
+        if header.length > 0, header.upperBound <= result.length {
+            if let titleRange = info.customTitleRange, titleRange.upperBound <= result.length {
+                // Custom title: hide the `[!type]` marker and render the title as
+                // real bold + tinted text so a long title WRAPS inside the box.
+                //
+                // NOTE: the type icon here is a stroked vector *path* overlay,
+                // never an image: drawing an image on this (potentially
+                // multi-line, wrapping) header line wedges TextKit 2's layout to
+                // a single line — clipping the title — by every image-drawing
+                // mechanism tried, while shape drawing is unaffected. See
+                // docs/investigations/archives/callout-title-wrap-investigation.md. Default callouts (the
+                // `else` below) keep their icon+name image: their synthesized
+                // type name is short and never wraps, so the single-line image
+                // overlay never hits the wedge.
+                let markerHide = NSRange(location: header.location,
+                                         length: titleRange.location - header.location)
+                if markerHide.length > 0 {
+                    result.addAttribute(.font, value: hiddenFont, range: markerHide)
+                    result.addAttribute(.foregroundColor, value: NSColor.clear, range: markerHide)
+                }
+                let titleFont = NSFontManager.shared.convert(bodyFont, toHaveTrait: .boldFontMask)
+                result.addAttribute(.font, value: titleFont, range: titleRange)
+                result.addAttribute(.foregroundColor, value: c.accent, range: titleRange)
+
+                // Icon before the title: anchored on the hidden `[`, with the
+                // kern reserving the icon's advance plus a gap so the title
+                // starts clear of it (applyOverlay's own kern is only the icon
+                // width — overwrite it).
+                var iconAdvance: CGFloat = 0
+                if let icon = calloutIconPathOverlay(iconName: info.style.iconName,
+                                                     color: c.accent,
+                                                     colorKey: accentCacheKey,
+                                                     titleFont: titleFont,
+                                                     iconNudge: info.style.iconBaselineNudge) {
+                    let anchor = NSRange(location: header.location, length: 1)
+                    applyOverlay(icon, anchor: anchor, in: result)
+                    iconAdvance = icon.bounds.width + bodyFont.pointSize * 0.3
+                    result.addAttribute(.kern, value: iconAdvance, range: anchor)
+                }
+
+                // The title sits at the callout's left padding. The first line
+                // carries the width-preserved `> ` marker before the (hidden)
+                // `[!type]`, so its text starts `quoteMarkerWidth` past the
+                // inset, plus the icon's kerned advance; headIndent adds both so
+                // wrapped lines align under the title. Top breathing room is
+                // above the first line only (the box covers it).
+                let ps = NSMutableParagraphStyle()
+                ps.firstLineHeadIndent = 2
+                ps.headIndent = 2 + quoteMarkerWidth + iconAdvance
+                ps.tailIndent = -10
+                result.addAttribute(.paragraphStyle, value: ps, range: headerLine)
+                reserveCalloutTopRoom(at: header.location, headerLine: headerLine, in: result)
+            } else {
+                // Default title (synthesized type name, not in the source, and
+                // short enough never to wrap): hide the whole header and draw the
+                // icon + name as one compact overlay image.
+                result.addAttribute(.font, value: hiddenFont, range: header)
+                result.addAttribute(.foregroundColor, value: NSColor.clear, range: header)
+                // Collapsible: a chevron in the drawn header image marks the fold
+                // state (▸ folded / ▾ expanded). ponytail: indicator only — Edit
+                // never actually collapses the body (real fold is Read mode's
+                // native <details>); custom-title callouts show no chevron since
+                // their title is live text we can't inject into.
+                let headerTitle: String
+                switch info.fold {
+                case .folded:   headerTitle = "▸ " + info.title
+                case .expanded: headerTitle = "▾ " + info.title
+                case nil:       headerTitle = info.title
+                }
+                if let overlay = calloutHeaderOverlay(iconName: info.style.iconName,
+                                                      title: headerTitle, color: c.accent,
+                                                      colorKey: accentCacheKey,
+                                                      iconNudge: info.style.iconBaselineNudge) {
+                    applyOverlay(overlay, anchor: NSRange(location: header.location, length: 1),
+                                 in: result)
+                    // Same top room as a custom title (the overlay's title sits
+                    // on the line baseline), so both headers share one geometry.
+                    reserveCalloutTopRoom(at: header.location, headerLine: headerLine, in: result)
+                }
+            }
+        }
+
+        // Render the body (the lines after the header) recursively: strip one
+        // `>` level, re-style the inner markdown, and splice it back so nested
+        // code/quotes/callouts/lists/etc. render inside the box.
+        renderCalloutBody(result, span: span, headerLineEnd: headerLineEnd)
+    }
+
+    /// Renders a callout's body — every line after the header — by stripping one
+    /// level of `>` prefix, running the full `styleBlock` over the stripped
+    /// inner markdown (which recurses into deeper callouts), and splicing the
+    /// resulting attributes back onto the real characters with the prefixes
+    /// hidden. Nested boxes/bars stack with the outer callout's box.
+    private func renderCalloutBody(_ result: NSMutableAttributedString,
+                                   span: SyntaxHighlighter.Span,
+                                   headerLineEnd: Int) {
+        let end = span.fullRange.upperBound
+        // Body starts after the header line's trailing newline.
+        guard headerLineEnd < end else { return }
+        let bodyStart = headerLineEnd + 1   // skip the `\n`
+        guard bodyStart < end else { return }
+
+        let ns = result.string as NSString
+        let space: unichar = 0x20, gt: unichar = 0x3E, newline: unichar = 0x0A
+
+        // Build the stripped inner markdown (UTF-16 units) with a parallel map
+        // back to real offsets, hide each line's `>` prefix, and remember each
+        // line's real and stripped ranges so we can splice paragraph styles and
+        // decorations per line.
+        var units: [unichar] = []
+        var realIndex: [Int] = []           // stripped UTF-16 offset → real offset
+        var lineMap: [(real: NSRange, stripped: NSRange)] = []
+        var cursor = bodyStart
+        while cursor < end {
+            let lineNL = ns.range(of: "\n", options: [],
+                                  range: NSRange(location: cursor, length: end - cursor))
+            let lineEnd = lineNL.location == NSNotFound ? end : lineNL.location
+
+            // Leading `>` prefix: optional spaces, `>`, optional single space.
+            var p = cursor
+            while p < lineEnd, ns.character(at: p) == space { p += 1 }
+            if p < lineEnd, ns.character(at: p) == gt {
+                p += 1
+                if p < lineEnd, ns.character(at: p) == space { p += 1 }
+            }
+            let prefixLen = p - cursor
+            if prefixLen > 0 {
+                let pr = NSRange(location: cursor, length: prefixLen)
+                result.addAttribute(.font, value: hiddenFont, range: pr)
+                result.addAttribute(.foregroundColor, value: NSColor.clear, range: pr)
+            }
+
+            let sStart = units.count
+            for i in p..<lineEnd { units.append(ns.character(at: i)); realIndex.append(i) }
+            lineMap.append((real: NSRange(location: cursor, length: lineEnd - cursor),
+                            stripped: NSRange(location: sStart, length: units.count - sStart)))
+
+            if lineEnd < end {
+                units.append(newline); realIndex.append(lineEnd)   // keep the `\n`
+                cursor = lineEnd + 1
+            } else {
+                cursor = end
+            }
+        }
+        guard !units.isEmpty else { return }
+
+        let stripped = String(utf16CodeUnits: units, count: units.count)
+
+        // Segment the stripped body with BlockParser and style each block on
+        // its own — mirroring the top-level pipeline. This enforces strict
+        // `>`-prefix membership: a line without the deeper prefix is its own
+        // block, so swift-markdown's lazy continuation can't pull a `> ` line
+        // into an adjacent `> > ` callout/quote. The body is only rendered for an
+        // inactive callout (the cursor is elsewhere), so inner blocks render
+        // fully — no cursor reveal needed.
+        // Cache only bodies without images or links: their styled attributes
+        // depend on image load state and the current document's folder.
+        let sub: NSAttributedString
+        let bodyCacheKey: NSString? = canCacheStyledContent(stripped)
+            ? "\(stylingEnvironmentKey)|\(stripped)" as NSString : nil
+        if let bodyCacheKey, let cached = calloutBodyStyleCache.object(forKey: bodyCacheKey) {
+            sub = cached
+        } else {
+            let built = NSMutableAttributedString(string: stripped, attributes: baseAttributes)
+            for b in BlockParser.parse(stripped) {
+                guard b.range.upperBound <= built.length else { continue }
+                let styled = styleBlock(b.content, cursorPosition: nil)
+                styled.enumerateAttributes(in: NSRange(location: 0, length: styled.length),
+                                           options: []) { attrs, r, _ in
+                    built.setAttributes(attrs,
+                                        range: NSRange(location: r.location + b.range.location,
+                                                       length: r.length))
+                }
+            }
+            let frozen = built.copy() as! NSAttributedString
+            if let bodyCacheKey { calloutBodyStyleCache.setObject(frozen, forKey: bodyCacheKey) }
+            sub = frozen
+        }
+
+        spliceStyledBody(sub, realIndex: realIndex, lineMap: lineMap, into: result)
+    }
+
+    /// Splices an inner-rendered body (`sub`, in stripped space) back onto the
+    /// real characters. Character attributes are mapped per run (skipping the
+    /// hidden prefixes); paragraph styles and block decorations are applied per
+    /// line, inset/stacked so inner content stays inside the outer box.
+    private func spliceStyledBody(_ sub: NSAttributedString,
+                                  realIndex: [Int],
+                                  lineMap: [(real: NSRange, stripped: NSRange)],
+                                  into result: NSMutableAttributedString) {
+        let step = 2 + quoteMarkerWidth   // one nesting level of horizontal inset
+        let subLen = sub.length
+
+        // Character attributes (everything except paragraph style / decoration),
+        // mapped from stripped offsets to real offsets in coalesced runs.
+        sub.enumerateAttributes(in: NSRange(location: 0, length: subLen), options: []) { attrs, sr, _ in
+            var ca = attrs
+            ca[.paragraphStyle] = nil
+            ca[.blockDecoration] = nil
+            guard !ca.isEmpty else { return }
+            var k = sr.location
+            while k < sr.upperBound {
+                let runStart = realIndex[k]
+                var last = runStart
+                var j = k + 1
+                while j < sr.upperBound, realIndex[j] == last + 1 { last = realIndex[j]; j += 1 }
+                result.addAttributes(ca, range: NSRange(location: runStart, length: last - runStart + 1))
+                k = j
+            }
+        }
+
+        // Paragraph styles and decorations, per body line.
+        for (i, lm) in lineMap.enumerated() {
+            let ss = lm.stripped.location
+            guard ss < subLen else { continue }
+
+            // Paragraph style: inset by one level so inner content stays inside
+            // the box; preserve any inner style (list indent, centered math, …).
+            let innerPS = (sub.attribute(.paragraphStyle, at: ss, effectiveRange: nil)
+                as? NSParagraphStyle) ?? bodyParagraphStyle
+            let ps = innerPS.mutableCopy() as! NSMutableParagraphStyle
+            ps.firstLineHeadIndent += step
+            ps.headIndent += step
+            if ps.tailIndent == 0 { ps.tailIndent = -10 }
+            // Set the title off from the body, as Read mode's `.callout-body`
+            // margin does. `max` keeps a larger inner reservation (a table's
+            // handle band).
+            if i == 0 {
+                ps.paragraphSpacingBefore = max(ps.paragraphSpacingBefore,
+                                                Self.calloutTitleBodyGap(bodyFont))
+            }
+            result.addAttribute(.paragraphStyle, value: ps, range: lm.real)
+
+            // Decoration: stack any inner box/bar (inset bumped) under the
+            // outer callout box already present on this line.
+            let innerDeco = sub.attribute(.blockDecoration, at: ss, effectiveRange: nil)
+            let bumped = bumpedDecorations(innerDeco, by: step)
+            if !bumped.isEmpty {
+                var stack: [BlockDecoration] = []
+                if let outer = result.attribute(.blockDecoration, at: lm.real.location,
+                                                effectiveRange: nil) as? BlockDecoration {
+                    stack.append(outer)
+                }
+                stack.append(contentsOf: bumped)
+                result.addAttribute(.blockDecoration, value: BlockDecorationList(stack), range: lm.real)
+            }
+        }
+    }
+
+    /// Returns inner decorations with every `.box` inset increased by `step`
+    /// (so a nested box sits within its parent); other kinds are unchanged.
+    private func bumpedDecorations(_ value: Any?, by step: CGFloat) -> [BlockDecoration] {
+        func bump(_ d: BlockDecoration) -> BlockDecoration {
+            if case .box = d.kind { return BlockDecoration(d.kind, inset: d.inset + step) }
+            return d
+        }
+        if let list = value as? BlockDecorationList { return list.decorations.map(bump) }
+        if let single = value as? BlockDecoration { return [bump(single)] }
+        return []
+    }
+
+    // MARK: Colors (appearance-aware)
+
+    var isDarkAppearance: Bool {
+        effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    private func resolvedCalloutColors(_ style: CalloutStyle)
+        -> (accent: NSColor, border: NSColor, background: NSColor) {
+        let dark = isDarkAppearance
+        let accent = NSColor(hex: style.accentHex(dark: dark)) ?? accentColor
+        let border = NSColor(hex: style.resolvedBorderHex(dark: dark)) ?? accent
+        let background: NSColor
+        if let bgHex = style.explicitBackgroundHex(dark: dark), let bg = NSColor(hex: bgHex) {
+            background = bg
+        } else {
+            background = accent.withAlphaComponent(style.backgroundAlpha)
+        }
+        return (accent, border, background)
+    }
+
+    // MARK: Padding constants (shared by the box and the header image)
+
+    /// Top breathing room, reserved on the header line by raising its hidden
+    /// anchor (see `reserveCalloutTopRoom`); the box covers it.
+    private var calloutTopPad: CGFloat { Self.calloutTopPad(bodyFont) }
+    static func calloutTopPad(_ bodyFont: NSFont) -> CGFloat { bodyFont.pointSize * 0.8 }
+    /// Space between the title line and the first body line, over the normal
+    /// line pitch. Read mode's `.callout-body { margin-top: 0.4em }` matches.
+    static func calloutTitleBodyGap(_ bodyFont: NSFont) -> CGFloat { bodyFont.pointSize * 0.4 }
+
+    /// The box padding the eye reads, shared with Read mode's CSS: box top to
+    /// the title's *cap line*, and the last *baseline* to the box bottom.
+    /// Descenders are sparse, so matching ink box to ink box (icon top vs
+    /// descender bottom) left the bottom looking ~1.5pt heavier. The bottom
+    /// also gets half the title's cap-to-x-height span: a mostly-lowercase
+    /// title ("Note", "Warning") reads as starting between its cap line and
+    /// x-height, so an exact cap-to-baseline match still looks top-heavy.
+    /// TextKit 2 line metrics are `defaultLineHeight` /
+    /// `defaultBaselineOffset`, with `lineSpacing` stacked above the glyphs.
+    static func calloutVisibleGaps(bodyFont: NSFont, lineSpacing: CGFloat)
+        -> (top: CGFloat, bottom: CGFloat) {
+        let titleFont = NSFontManager.shared.convert(bodyFont, toHaveTrait: .boldFontMask)
+        let top = calloutTopPad(bodyFont) + lineSpacing
+            + NSLayoutManager().defaultBaselineOffset(for: titleFont) - titleFont.capHeight
+        return (top, top + (titleFont.capHeight - titleFont.xHeight) / 2)
+    }
+    /// Reserves the box's top room on the header line itself: the hidden
+    /// anchor glyph at `location` is raised so the line's ascent puts the
+    /// title's baseline `calloutVisibleGaps().top + capHeight` below the
+    /// fragment top.
+    ///
+    /// Not `paragraphSpacingBefore`: TextKit drops it on the document's first
+    /// paragraph, which left a callout opening the document with ~5pt of top
+    /// padding. Not `minimumLineHeight`: it is paragraph-wide, so it would
+    /// inflate every wrapped line of a long custom title. TextKit also stacks
+    /// `lineSpacing` above every line except the document's first, so the
+    /// header paragraph gets none — the raise covers it — and the box top sits
+    /// the same distance above the title wherever the callout is. (A wrapped
+    /// custom title's lines are set solid, like a heading's.)
+    private func reserveCalloutTopRoom(at location: Int, headerLine: NSRange,
+                                       in result: NSMutableAttributedString) {
+        guard location < result.length, headerLine.upperBound <= result.length else { return }
+        let titleFont = NSFontManager.shared.convert(bodyFont, toHaveTrait: .boldFontMask)
+        let gaps = Self.calloutVisibleGaps(bodyFont: bodyFont,
+                                           lineSpacing: bodyParagraphStyle.lineSpacing)
+        result.addAttribute(.baselineOffset, value: gaps.top + titleFont.capHeight,
+                            range: NSRange(location: location, length: 1))
+        let base = result.attribute(.paragraphStyle, at: headerLine.location, effectiveRange: nil)
+            as? NSParagraphStyle ?? calloutParagraphStyle()
+        let ps = base.mutableCopy() as! NSMutableParagraphStyle
+        ps.lineSpacing = 0
+        result.addAttribute(.paragraphStyle, value: ps, range: headerLine)
+    }
+
+    /// Bottom breathing room. Delivered by growing the last line's layout
+    /// fragment frame (a box `bottomPad`), so it is genuine clickable text
+    /// space below the last line — not trailing paragraph spacing, which
+    /// TextKit 2 leaves out of the fragment and which clicks would miss.
+    /// Sized so the last baseline lands `calloutVisibleGaps().bottom` above
+    /// the box's bottom edge.
+    var calloutBottomPad: CGFloat {
+        let metrics = NSLayoutManager()
+        let baselineToLineBottom = metrics.defaultLineHeight(for: bodyFont)
+            - metrics.defaultBaselineOffset(for: bodyFont)
+        let gaps = Self.calloutVisibleGaps(bodyFont: bodyFont,
+                                           lineSpacing: bodyParagraphStyle.lineSpacing)
+        return max(0, gaps.bottom - baselineToLineBottom)
+    }
+
+    // MARK: Paragraph style (text insets; the box itself is a BlockDecoration)
+
+    /// Text insets the NSTextBlock padding used to provide. The left inset is
+    /// kept small so the callout's text lines up with a plain block quote's —
+    /// the quote's 2pt bar inset matches this 2pt — and the top breathing room
+    /// is reserved on the header line (`reserveCalloutTopRoom`). The bottom breathing
+    /// room is the last line's box `bottomPad` (which grows that fragment's
+    /// frame), so the drawn box covers it and clicks there land on the
+    /// callout's last line — no trailing paragraph spacing needed.
+    private func calloutParagraphStyle() -> NSParagraphStyle {
+        let ps = NSMutableParagraphStyle()
+        ps.lineSpacing = bodyParagraphStyle.lineSpacing
+        ps.firstLineHeadIndent = 2
+        // Hanging indent so wrapped body lines align after the `> ` marker,
+        // matching list items and plain blockquotes.
+        ps.headIndent = 2 + quoteMarkerWidth
+        ps.tailIndent = -10
+        return ps
+    }
+
+    // MARK: Header icon (custom title — stroked path, never an image)
+
+    /// The type icon for a custom-title header, as a stroked-path overlay
+    /// sized to a `pointSize` square and vertically centered on the bold
+    /// title's optical middle (same optics as the header image below). A path
+    /// — not an image — because the custom-title line wraps, and an image
+    /// drawn on a multi-line fragment wedges its layout to one line (see
+    /// docs/investigations/archives/callout-title-wrap-investigation.md). `nil` for an unknown icon.
+    private func calloutIconPathOverlay(iconName: String, color: NSColor, colorKey: String,
+                                        titleFont: NSFont, iconNudge: CGFloat) -> FragmentOverlay? {
+        let pointSize = bodyFont.pointSize
+        let cacheKey = "\(iconName)|\(titleFont.fontName)|\(titleFont.pointSize)|"
+            + "\(theme.standardLigatures)|"
+            + colorKey + "|\(iconNudge)"
+        if let cached = reusableCalloutPathOverlayCache.object(
+            forKey: cacheKey as NSString
+        ) {
+            return cached
+        }
+
+        guard let svgPath = LucideIcons.path(iconName) else { return nil }
+        let scale = pointSize / 24   // Lucide viewBox → icon square
+        var transform = CGAffineTransform(scaleX: scale, y: scale)
+        guard let scaled = svgPath.copy(using: &transform) else { return nil }
+        // bounds.minY is the icon's *bottom* relative to the baseline: center
+        // the square on the title's cap height (matches the header image's
+        // icon placement).
+        let opticalCenter = titleFont.capHeight / 2
+        let overlay = FragmentOverlay(
+            path: scaled,
+            color: color,
+            lineWidth: 2 * scale,
+            bounds: CGRect(
+                x: 0,
+                y: opticalCenter - pointSize / 2 + iconNudge,
+                width: pointSize,
+                height: pointSize
+            )
+        )
+        reusableCalloutPathOverlayCache.setObject(
+            overlay,
+            forKey: cacheKey as NSString
+        )
+        return overlay
+    }
+
+    // MARK: Header image (icon + title)
+
+    /// Draws "icon  Title" into one image, tinted to the callout color, and
+    /// wraps it in a `FragmentOverlay`. Returns `nil` if the Lucide icon can't
+    /// be resolved. The overlay is anchored by the title's baseline, so the
+    /// title sits exactly where a custom title's live text would; the top
+    /// breathing room is reserved on the header line (`reserveCalloutTopRoom`).
+    private func calloutHeaderOverlay(iconName: String, title: String, color: NSColor,
+                                      colorKey: String,
+                                      iconNudge: CGFloat) -> FragmentOverlay? {
+        let pointSize = bodyFont.pointSize
+        let titleFont = NSFontManager.shared.convert(bodyFont, toHaveTrait: .boldFontMask)
+        let cacheKey = "\(iconName)|\(title)|\(titleFont.fontName)|\(titleFont.pointSize)|"
+            + "\(theme.standardLigatures)|"
+            + colorKey + "|\(iconNudge)"
+        if let cached = reusableCalloutHeaderOverlayCache.object(
+            forKey: cacheKey as NSString
+        ) {
+            return cached
+        }
+
+        guard let symbol = LucideIcons.image(iconName, color: color, pointSize: pointSize)
+        else { return nil }
+
+        let titleAttrs: [NSAttributedString.Key: Any] = [.font: titleFont, .foregroundColor: color]
+        let titleStr = NSAttributedString(string: title, attributes: titleAttrs)
+        let titleSize = titleStr.size()
+
+        let gap = pointSize * 0.3
+        let symW = symbol.size.width, symH = symbol.size.height
+        let contentHeight = ceil(max(symH, titleSize.height))
+        let width = ceil(symW + gap + titleSize.width)
+        let titleY = (contentHeight - titleSize.height) / 2
+        // The title's baseline inside the image; the overlay is placed so this
+        // lands on the line's baseline, exactly where a custom title's text sits.
+        let baseline = titleY + abs(titleFont.descender)
+
+        let image = NSImage(size: NSSize(width: width, height: contentHeight), flipped: false) { _ in
+            titleStr.draw(at: NSPoint(x: symW + gap, y: titleY))
+            // Center the icon on the title's cap height, so it overhangs the cap
+            // line and the baseline equally (how SF Symbols sit beside text).
+            let opticalCenter = baseline + titleFont.capHeight / 2
+            symbol.draw(in: NSRect(x: 0, y: opticalCenter - symH / 2 + iconNudge, width: symW, height: symH))
+            return true
+        }
+        // Re-rasterize at the screen's backing scale on every draw rather than
+        // caching a 1× bitmap (which would render the composited title soft).
+        image.cacheMode = .never
+
+        let overlay = FragmentOverlay(
+            image: image,
+            bounds: CGRect(
+                x: 0,
+                y: -baseline,
+                width: width,
+                height: contentHeight
+            )
+        )
+        reusableCalloutHeaderOverlayCache.setObject(
+            overlay,
+            forKey: cacheKey as NSString
+        )
+        return overlay
+    }
+}

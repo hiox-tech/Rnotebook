@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="AppleTitle" content="Rnotebook Help"><meta name="description" content="Quarto and QMD Basics"><meta name="keywords" content="Rnotebook,Markdown,QMD,RMD"><title>Quarto and QMD Basics</title><link rel="stylesheet" href="../help.css"></head><body><nav><a href="index.html">User Guide</a></nav><main><a name="rnotebook-quarto-basics" id="rnotebook-quarto-basics"></a><h1 id="title">Quarto and QMD Basics</h1>
+<p>Quarto combines Markdown prose, code and document options into reports. <code>.qmd</code> is a Quarto document; ordinary <code>.md</code> primarily describes text structure. Rnotebook manages QMD/RMD notebooks, both of which build on Markdown.</p>
+<h2 id="section-0">The structure of a QMD document</h2>
+<pre><code>---
+title: &quot;Measurement report&quot;
+author: &quot;Author&quot;
+format:
+  html:
+    toc: true
+execute:
+  echo: true
+  warning: true
+---
+
+# Data and methods
+
+Describe the data source and method.
+
+```{r}
+#| label: summary
+values &lt;- c(12, 18, 24)
+mean(values)
+```
+
+# Conclusion
+
+Explain what the results show.
+</code></pre>
+<p>The initial pair of <code>---</code> lines encloses YAML; Markdown follows it, and <code>{r}</code> fences mark executable R chunks. Indent YAML with spaces, not tabs, and align keys at the same level. Quote a title containing punctuation such as a colon. Chunk options beginning with <code>#|</code> also use YAML.</p>
+<h2 id="section-1">Useful document options</h2>
+<div class="table-scroll"><table><thead><tr><th>Option</th><th>Purpose and example</th></tr></thead><tbody><tr><td>title / author</td><td>Report title and author, for example title: &quot;Measurement report&quot;</td></tr><tr><td>lang</td><td>Document language such as en-US or zh-CN; blank custom language adds no override</td></tr><tr><td>format</td><td>html, docx, pdf or typst; nest format-specific options as needed</td></tr><tr><td>toc</td><td>Generate a table of contents, often inside the selected format</td></tr><tr><td>number-sections</td><td>Number headings</td></tr><tr><td>execute</td><td>Document-wide execution settings, with corresponding chunk overrides</td></tr><tr><td>bibliography</td><td>Bibliography file, for example references.bib</td></tr></tbody></table></div>
+<h2 id="section-2">Common chunk options</h2>
+<pre><code>```{r}
+#| label: fig-values
+#| fig-cap: &quot;Three measurements&quot;
+#| echo: false
+#| fig-width: 6
+#| fig-height: 4
+plot(c(12, 18, 24), type = &quot;b&quot;)
+```
+</code></pre>
+<div class="table-scroll"><table><thead><tr><th>Option</th><th>Meaning when Quarto renders</th></tr></thead><tbody><tr><td>eval: false</td><td>Do not execute the chunk</td></tr><tr><td>echo: false</td><td>Execute, but omit source code from the report</td></tr><tr><td>output: false</td><td>Omit chunk results from the report</td></tr><tr><td>include: false</td><td>Execute, but omit both code and results</td></tr><tr><td>warning: false / message: false</td><td>Hide warnings or messages respectively</td></tr><tr><td>error: true</td><td>Include ordinary errors and continue processing</td></tr><tr><td>label</td><td>Name the chunk; use fig- for figures and tbl- for tables</td></tr><tr><td>fig-cap / tbl-cap</td><td>Figure/table caption</td></tr><tr><td>fig-width / fig-height</td><td>Plot dimensions in inches</td></tr></tbody></table></div>
+<p>These are report settings. Interactive batch execution in Rnotebook reads supported static controls, such as <code>eval</code> and <code>error</code>; manual chunk execution can explicitly run a disabled chunk. <code>echo: false</code> does not hide source in the editor. See <a href="r-export.html">Running R and Rendering</a>.</p>
+<h2 id="section-3">Figures, references and inline code</h2>
+<p>After labeling a figure chunk <code>fig-values</code>, refer to it with <code>See @fig-values</code>. Generate a table with <code>knitr::kable()</code>, set <code>label: tbl-summary</code> and <code>tbl-cap</code>, then refer to <code>@tbl-summary</code>.</p>
+<pre><code>See @fig-values.
+Cite a bibliography entry as [@smith2024] and set bibliography in YAML.
+Inline calculation: the mean is `r mean(values)`.
+</code></pre>
+<p>Quarto resolves cross-references, citations and inline R expressions during rendering. Interactive chunk execution does not replace these source expressions with report content. Citation keys must exist in the specified bibliography.</p>
+<h2 id="section-4">QMD and RMD chunk headers</h2>
+<p>QMD commonly places chunk options on leading <code>#|</code> lines. RMD often uses <code>{r setup, include=FALSE}</code>, with R logical values <code>TRUE/FALSE</code>. Rnotebook recognizes common named and parameterized R chunks. Renaming a file does not convert all its settings: check R Markdown’s <code>output:</code> versus Quarto’s <code>format:</code> in particular.</p>
+<h2 id="section-5">Output format and parameter source</h2>
+<figure><img src="../images/render-panel-en.png" alt="Quarto panel: choose a format, then document YAML or custom parameters."><figcaption>Quarto panel: choose a format, then document YAML or custom parameters.</figcaption></figure>
+<ul><li><strong>HTML</strong>: browser reading; the app embeds resources in a single HTML file.</li><li><strong>Word</strong>: a <code>.docx</code> file for review and further editing.</li><li><strong>LaTeX PDF</strong>: TeX typesetting; prepare the local engine and fonts.</li><li><strong>Typst PDF</strong>: Typst typesetting; check fonts and format options.</li></ul>
+<p><strong>YAML</strong> uses document configuration. <strong>Custom</strong> uses the panel’s parameters for this render without rewriting the source. Draft custom values survive mode changes; hidden values do not affect YAML mode. Rendering uses a separate process, so include code that creates every required object in the document.</p>
+<h2 id="section-6">Troubleshoot a failed render</h2>
+<p>Read the first actual error in the log. For missing objects, check chunk order and <code>eval</code>. For missing packages, install them for the selected R. For missing images/CSV, check relative paths. For YAML errors, check indentation and quoting. PDF engine, font or package errors belong to that typesetting environment. Rendering the same document to HTML first helps separate calculation errors from PDF layout issues.</p>
+<p>References: <a href="https://quarto.org/docs/authoring/markdown-basics.html" target="_blank" rel="noopener">Markdown Basics</a>, <a href="https://quarto.org/docs/computations/r.html" target="_blank" rel="noopener">Using R</a>, <a href="https://quarto.org/docs/computations/execution-options.html" target="_blank" rel="noopener">Execution Options</a>.</p></main></body></html>

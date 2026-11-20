@@ -1,0 +1,367 @@
+---
+title: "Rnotebook 复杂示例验证"
+subtitle: "240 条模拟测量 · 多代码块 · 表格 · 模型 · 图形 · Quarto"
+author: "Rnotebook validation"
+lang: zh-CN
+format:
+  html:
+    toc: true
+    number-sections: true
+    embed-resources: true
+    code-fold: false
+  docx:
+    toc: true
+  typst:
+    toc: true
+    mainfont: "PingFang SC"
+execute:
+  echo: true
+  warning: true
+  message: true
+  cache: false
+---
+
+# 验证说明
+
+本文使用**模拟数据**验证 QMD 编辑、同一 R 会话的连续计算、原生结果与独立渲染。 数据来自旁边的 `measurements.csv`；App 不建立项目、不收集资源，也不提供数据网格。
+
+> 检查重点：中文、前导零、真正缺失值、包含逗号及换行的字符字段，以及多图和多种输出。
+
+**地方**
+
+| 内容         | 规模 | 预期                 |
+|:-------------|-----:|:---------------------|
+| 模拟原始记录 |  240 | 3 个中心             |
+| 完整配对     |  233 | 排除 7 个缺失配对    |
+| Bootstrap    |  600 | 固定随机种子         |
+| R 代码块     |   12 | 最后输出验证通过标记 |
+
+## 环境与执行次数
+
+```{r}
+#| label: validation-setup
+#| fig-width: 7
+#| fig-height: 4.5
+.validation_run_count <- if (
+  exists('.validation_run_count', inherits = FALSE)
+) {
+  .validation_run_count + 1L
+} else {
+  1L
+}
+.bootstrap_runs <- 0L
+set.seed(20261106)
+stopifnot(
+  requireNamespace('knitr', quietly = TRUE),
+  requireNamespace('ggplot2', quietly = TRUE)
+)
+message('VALIDATION_MESSAGE: expected message; not a failure')
+warning(
+  'VALIDATION_WARNING: deliberately generated to check warning display',
+  call. = FALSE
+)
+cat(
+  'Run count:',
+  .validation_run_count,
+  '\nR:',
+  as.character(getRversion()),
+  '\n'
+)
+```
+
+
+
+# 导入、清洗与缺失审计
+
+## 外部 CSV 与类型保护
+
+```{r}
+#| label: validation-import
+raw <- read.csv(
+  'measurements.csv',
+  colClasses = c('character', 'character', 'numeric', 'numeric', 'character'),
+  na.strings = 'NA',
+  check.names = FALSE,
+  fileEncoding = 'UTF-8'
+)
+stopifnot(
+  nrow(raw) == 240L,
+  raw$sample_id[1L] == '00001',
+  grepl('中文', raw$note[1L]),
+  grepl('\n', raw$note[2L])
+)
+raw$site <- factor(raw$site, levels = c('Site A', 'Site B', 'Site C'))
+keep <- is.finite(raw$reference) & is.finite(raw$candidate)
+paired <- raw[keep, , drop = FALSE]
+paired$average <- (paired$reference + paired$candidate) / 2
+paired$difference <- paired$candidate - paired$reference
+cat(
+  'Imported:',
+  nrow(raw),
+  'Complete pairs:',
+  nrow(paired),
+  'Excluded:',
+  sum(!keep),
+  '\n'
+)
+head(raw, 4)
+```
+
+## 按中心审计
+
+```{r}
+#| label: validation-audit
+audit <- do.call(
+  rbind,
+  lapply(levels(raw$site), function(s) {
+    k <- raw$site == s
+    data.frame(
+      Site = s,
+      Total = sum(k),
+      Complete = sum(keep[k]),
+      Excluded = sum(!keep[k])
+    )
+  })
+)
+knitr::kable(audit, caption = '按中心的完整配对与排除记录', row.names = FALSE)
+```
+
+## 描述统计与 t 区间
+
+```{r}
+#| label: validation-descriptive
+summary_table <- do.call(
+  rbind,
+  lapply(levels(paired$site), function(s) {
+    x <- paired$difference[paired$site == s]
+    se <- sd(x) / sqrt(length(x))
+    half <- qt(0.975, df = length(x) - 1) * se
+    data.frame(
+      Site = s,
+      N = length(x),
+      Mean = mean(x),
+      SD = sd(x),
+      Lower = mean(x) - half,
+      Upper = mean(x) + half
+    )
+  })
+)
+knitr::kable(
+  summary_table,
+  digits = 4,
+  caption = '差值 Candidate − Reference 的分中心描述统计',
+  row.names = FALSE
+)
+```
+
+# 模型与关系图
+
+回归模型为 $Y_i = \beta_0 + \beta_1 X_i + \epsilon_i$。
+
+```{r}
+#| label: validation-regression
+fit <- lm(candidate ~ reference, data = paired)
+print(summary(fit))
+coefficient_table <- cbind(Estimate = coef(fit), confint(fit))
+knitr::kable(coefficient_table, digits = 5, caption = '回归系数与95%置信区间')
+```
+
+```{r}
+#| label: validation-scatter
+#| fig-cap: "不同中心的配对测量及回归线"
+scatter_plot <- ggplot2::ggplot(
+  paired,
+  ggplot2::aes(reference, candidate, colour = site)
+) +
+  ggplot2::geom_point(size = 1.7, alpha = 0.75) +
+  ggplot2::geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = 2,
+    colour = 'grey55'
+  ) +
+  ggplot2::geom_smooth(
+    ggplot2::aes(group = 1),
+    method = 'lm',
+    formula = y ~ x,
+    se = TRUE,
+    colour = '#225EA8'
+  ) +
+  ggplot2::labs(
+    title = 'Paired measurements',
+    x = 'Reference',
+    y = 'Candidate',
+    colour = 'Site'
+  ) +
+  ggplot2::theme_bw(base_size = 11)
+scatter_plot
+```
+
+# 差值与重采样
+
+差值定义为 $d_i = Y_i-X_i$，展示界限为 $\bar d \pm 1.96s_d$。 这里直接使用基础 R 计算，为软件验证示例，不调用 GUI 分析模块。
+
+```{r}
+#| label: validation-agreement
+bias <- mean(paired$difference)
+loa <- bias + c(-1, 1) * qnorm(0.975) * sd(paired$difference)
+agreement <- data.frame(
+  Measure = c('Mean difference', 'Lower LoA', 'Upper LoA'),
+  Value = c(bias, loa)
+)
+knitr::kable(
+  agreement,
+  digits = 5,
+  caption = '平均差与展示界限',
+  row.names = FALSE
+)
+```
+
+```{r}
+#| label: validation-agreement-plot
+#| fig-cap: "平均值与差值关系：复用上块计算的界限"
+agreement_plot <- ggplot2::ggplot(
+  paired,
+  ggplot2::aes(average, difference, colour = site)
+) +
+  ggplot2::geom_point(size = 1.7, alpha = 0.8) +
+  ggplot2::geom_hline(yintercept = bias, colour = '#225EA8', linewidth = 0.6) +
+  ggplot2::geom_hline(yintercept = loa, colour = '#CB181D', linetype = 2) +
+  ggplot2::labs(
+    title = 'Difference versus mean',
+    x = '(Reference + Candidate) / 2',
+    y = 'Candidate - Reference',
+    colour = 'Site'
+  ) +
+  ggplot2::theme_bw(base_size = 11)
+agreement_plot
+```
+
+```{r}
+#| label: validation-bootstrap
+.bootstrap_runs <- .bootstrap_runs + 1L
+set.seed(20261106)
+boot_mean <- replicate(600, mean(sample(paired$difference, replace = TRUE)))
+bootstrap_ci <- unname(quantile(boot_mean, c(0.025, 0.975), type = 7))
+knitr::kable(
+  data.frame(
+    Replicates = length(boot_mean),
+    Bias = bias,
+    Lower = bootstrap_ci[1],
+    Upper = bootstrap_ci[2]
+  ),
+  digits = 5,
+  caption = '固定种子的百分位 Bootstrap 区间',
+  row.names = FALSE
+)
+```
+```{r}
+#| label: validation-bootstrap-plot
+#| fig-cap: "600次重采样均值的分布"
+bootstrap_plot <- ggplot2::ggplot(
+  data.frame(value = boot_mean),
+  ggplot2::aes(value)
+) +
+  ggplot2::geom_histogram(bins = 28, fill = '#74A9CF', colour = 'white') +
+  ggplot2::geom_vline(
+    xintercept = bootstrap_ci,
+    colour = '#CB181D',
+    linetype = 2
+  ) +
+  ggplot2::geom_vline(xintercept = bias, colour = '#225EA8') +
+  ggplot2::labs(
+    title = 'Bootstrap mean difference',
+    x = 'Resampled mean difference',
+    y = 'Frequency'
+  ) +
+  ggplot2::theme_minimal(base_size = 11)
+bootstrap_plot
+```
+
+# 多图诊断与最终校验
+
+```{r}
+#| label: validation-diagnostics
+#| fig-cap: "同一模型的四联诊断图，不重新拟合"
+local({
+  old <- par(
+    mfrow = c(2, 2),
+    mar = c(2.6, 2.6, 1.8, 0.5),
+    mgp = c(1.5, 0.4, 0),
+    cex = 0.65
+  )
+  on.exit(par(old))
+  plot(fit, which = 1:4, ask = FALSE, id.n = 0)
+})
+```
+
+## 自动检查清单
+
+1.  CSV 中的前导零、中文、逗号、引号和字符内换行保留。
+2.  所有分析块共用同一 R 会话；回归只拟合一次，诊断图复用模型。
+3.  切换 Code / Visual、查看结果和保存文档不重新运行 Bootstrap。
+4.  独立 Quarto 渲染从外部 CSV 重新计算，不读取交互会话。
+
+```{r}
+#| label: validation-checks
+stopifnot(
+  nrow(paired) == 233L,
+  sum(!keep) == 7L,
+  sum(summary_table$N) == 233L,
+  .validation_run_count >= 1L,
+  .bootstrap_runs == 1L,
+  length(boot_mean) == 600L,
+  all(is.finite(boot_mean)),
+  bootstrap_ci[1] < bias,
+  bootstrap_ci[2] > bias,
+  coef(fit)[['reference']] > 0.99,
+  coef(fit)[['reference']] < 1.06,
+  isTRUE(all.equal(bias, unname(mean(paired$candidate - paired$reference))))
+)
+cat(sprintf(
+  'COMPLEX_VALIDATION_OK rows=240 complete=233 excluded=7 bootstrap=600 run_count=%d bootstrap_runs=%d\n',
+  .validation_run_count,
+  .bootstrap_runs
+))
+
+versions <- data.frame(
+  Component = c('R', 'ggplot2', 'knitr'),
+  Version = c(
+    as.character(getRversion()),
+    as.character(utils::packageVersion('ggplot2')),
+    as.character(utils::packageVersion('knitr'))
+  )
+)
+knitr::kable(versions, caption = '本次实际运行版本', row.names = FALSE)
+
+###
+```
+
+```{r}
+cranlogs::cran_downloads("ivdtools", when = "last-month")
+cranlogs::cran_downloads(packages = "ivdtools", when = "last-month")
+```
+
+![](<ivd%E5%9B%BE%E6%A0%87%E8%AE%BE%E8%AE%A1/%E8%93%9D%E8%89%B2%E8%AF%95%E7%AE%A1%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%9B%B2%E7%BA%BF%E5%9B%BE%E6%A0%87-2.png>)
+
+
+```{r}
+## 在这里输入 R 代码
+```
+
+
+
+```mermaid
+flowchart TD
+ A[开始] --> B[结束]
+```
+
+sdf史蒂夫十多个
+
+
+
+
+```{r}
+
+```
+

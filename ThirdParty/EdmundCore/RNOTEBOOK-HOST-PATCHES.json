@@ -1,0 +1,71 @@
+{
+  "date": "2026-11-16",
+  "purpose": "Existing host fixes, unified viewport/result fragments, nonactivating source formatting, consistent blank caret metrics, and native configurable syntax attributes/cache identity; upstream/inherited/pruning layers preserved",
+  "patch": "Patches/rnotebook-host-history.patch",
+  "modified": {
+    "Editing/EditorTextView+FormattingCore.swift": {
+      "beforeSHA256": "bf41e4ace385422ed581b25dafd81bde813504cc08e776913c8c3289c20c2517",
+      "patchedSHA256": "1464aea571d15191ff2eeb411c78ed833116dca6e24f72988fd94dd205d3bd3e"
+    },
+    "Rendering/EditorTextView+CodeHighlighting.swift": {
+      "beforeSHA256": "86b6c850c348742ae25155ab304c6b6393f924222b36b0d0b8d733599b1c9e33",
+      "patchedSHA256": "21cdcc7a50872c4ca38c46869ca9cbb7727418f8f6f9940b63a86fbd99fb91ed"
+    },
+    "Rendering/EditorTextView+ImageRendering.swift": {
+      "beforeSHA256": "d6ef229ac7bb5b810de5516ea1790f5992936c3344a1d0a2ff1a4c66bbb04a10",
+      "patchedSHA256": "f0e54279edea00379028d90540c8f3675c62875e8faca00b70f28cb2810dcd20"
+    },
+    "Rendering/EditorTextView+Rendering.swift": {
+      "beforeSHA256": "4d535466822568ea4f7fdb2704ee4fa16da2e7f06ea1ace7fc4ed34046dac4b6",
+      "patchedSHA256": "4c4acfa791c4594c0b388737c4c1318f20addb5dd100037540d20e2c54ee1f11"
+    },
+    "TextView/DecoratedTextLayoutFragment.swift": {
+      "beforeSHA256": "2f9898d634b3035106ed10201cd00f93b2370d85d54f040d656e803f54c8d203",
+      "patchedSHA256": "a3b85cdda854deee5cd51e0bdaddf9fd42ea8a08537dc62f5ad404d5c7c5e1a4"
+    },
+    "TextView/EditorTextView+CodeCopyButton.swift": {
+      "beforeSHA256": "377786defc7f07e7852396dd7536692d43be2028785a7d7b3bcbf57c058dfe4a",
+      "patchedSHA256": "596c50a258e3ec78153d716d54bbf576ecb4c4e56efb0a80003c8ef1900e5dd5"
+    },
+    "TextView/EditorTextView+Composition.swift": {
+      "beforeSHA256": "e6b7c8101d8d7537eeb97959f98f335b6757f3756241e20f6d618461e4c9fa3d",
+      "patchedSHA256": "8151fe52b437a581f72341cbb8a604e32666dd19f2308231ca9d5e9c5220a6f5"
+    },
+    "TextView/EditorTextView+EditFlow.swift": {
+      "beforeSHA256": "01dca64b04b70fb7f3df82df14466a6269535c63989eb88dbb0326d886c85008",
+      "patchedSHA256": "2276f4327d2b2a4e4f6acf7bbd8d19e25632f772702847c667966531f9616a6b"
+    },
+    "TextView/EditorTextView+Find.swift": {
+      "beforeSHA256": "58764b41e6dded1dc7a16b8fe84604c75974e11a9a04cc4e10675505139b8008",
+      "patchedSHA256": "f45df4fa0a0871f924173b42c7f568c6d9d2d80cac6c457d3d45de25d468e135"
+    },
+    "TextView/EditorTextView+LazyStyling.swift": {
+      "beforeSHA256": "8fa3ecd794737390f6ca60ee5ba5d22cd633f37edec9e8be5a775eef39308fec",
+      "patchedSHA256": "b98d188c8416f20693a682babd9085e44d1d8790ff41c5c6e5aea4daa74db574"
+    },
+    "TextView/EditorTextView+LineNumbers.swift": {
+      "beforeSHA256": "71087b1d1066d6f4a64fdf1f460cdaae7b3a0bc55762c791d93a0aa610c8b96b",
+      "patchedSHA256": "f02dc293dab158b5f91514092bc7389b4a7fa4cc31a4c12122c7e7d9732a83aa"
+    },
+    "TextView/EditorTextView+TableRawButton.swift": {
+      "beforeSHA256": "5a1b7303323c0f271ce59dd4d350fa9d908189e341fea879ddf0c06a71f6bf38",
+      "patchedSHA256": "61e055df1c054ca143c09551ebfd657dd9f54851c96ae11853086293ce3f5678"
+    },
+    "TextView/EditorTextView+TextKit2.swift": {
+      "beforeSHA256": "8b19920e80607a45f4210dc640a8cfee49d250d9202306353e11746f35ec8244",
+      "patchedSHA256": "9a42f51893815c321b4bbc0932df9c7fbe7c38df3f5add4a0a147408309bcf03"
+    },
+    "TextView/EditorTextView+TypewriterScroll.swift": {
+      "beforeSHA256": "df3bbb5810ca2d8901aacb7626e70fa06ab31f19fe6fd1638b7ac2ff1e8864d0",
+      "patchedSHA256": "c3da8fa29a4137a53d1917f3a1a53e07bf08124dedf090d9a3b6821760c3c333"
+    },
+    "TextView/EditorTextView+Undo.swift": {
+      "beforeSHA256": "a186e72bb4248cd40034cf13bead29b3305f344cdf20b9333b8faaa2ad09775a",
+      "patchedSHA256": "4560e2cf8f0b7c8f8ed91bc1e1f987ae1b0247b4e0ad4112f666375f08aa743d"
+    },
+    "TextView/EditorTextView.swift": {
+      "beforeSHA256": "980b18318a352502ef5ebd4e0e788a9bf53ea8dfc52f91a59b942b7f7ff6e602",
+      "patchedSHA256": "a30042840c591fbba33456f05d71d80d07ebd549b7db77d2d758d5b3da9d40f3"
+    }
+  }
+}

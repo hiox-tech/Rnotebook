@@ -1,0 +1,1126 @@
+---
+title: "Long document and search"
+execute:
+  eval: false
+  cache: false
+---
+
+# Long document
+
+All blocks are deliberately skipped. Use Find to locate repeated words, combining Unicode, or the final marker.
+
+## Section 001
+
+Paragraph 1: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-001
+cat("LONG_BLOCK_001\n")
+```
+
+## Section 002
+
+Paragraph 2: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-002
+cat("LONG_BLOCK_002\n")
+```
+
+## Section 003
+
+Paragraph 3: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-003
+cat("LONG_BLOCK_003\n")
+```
+
+## Section 004
+
+Paragraph 4: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-004
+cat("LONG_BLOCK_004\n")
+```
+
+## Section 005
+
+Paragraph 5: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-005
+cat("LONG_BLOCK_005\n")
+```
+
+## Section 006
+
+Paragraph 6: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-006
+cat("LONG_BLOCK_006\n")
+```
+
+## Section 007
+
+Paragraph 7: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-007
+cat("LONG_BLOCK_007\n")
+```
+
+## Section 008
+
+Paragraph 8: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-008
+cat("LONG_BLOCK_008\n")
+```
+
+## Section 009
+
+Paragraph 9: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-009
+cat("LONG_BLOCK_009\n")
+```
+
+## Section 010
+
+Paragraph 10: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-010
+cat("LONG_BLOCK_010\n")
+```
+
+## Section 011
+
+Paragraph 11: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-011
+cat("LONG_BLOCK_011\n")
+```
+
+## Section 012
+
+Paragraph 12: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-012
+cat("LONG_BLOCK_012\n")
+```
+
+## Section 013
+
+Paragraph 13: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-013
+cat("LONG_BLOCK_013\n")
+```
+
+## Section 014
+
+Paragraph 14: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-014
+cat("LONG_BLOCK_014\n")
+```
+
+## Section 015
+
+Paragraph 15: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-015
+cat("LONG_BLOCK_015\n")
+```
+
+### Repeated heading
+
+Nested heading with a repeated label in the navigation only.
+
+## Section 016
+
+Paragraph 16: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-016
+cat("LONG_BLOCK_016\n")
+```
+
+## Section 017
+
+Paragraph 17: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-017
+cat("LONG_BLOCK_017\n")
+```
+
+## Section 018
+
+Paragraph 18: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-018
+cat("LONG_BLOCK_018\n")
+```
+
+## Section 019
+
+Paragraph 19: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-019
+cat("LONG_BLOCK_019\n")
+```
+
+## Section 020
+
+Paragraph 20: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-020
+cat("LONG_BLOCK_020\n")
+```
+
+## Section 021
+
+Paragraph 21: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-021
+cat("LONG_BLOCK_021\n")
+```
+
+## Section 022
+
+Paragraph 22: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-022
+cat("LONG_BLOCK_022\n")
+```
+
+## Section 023
+
+Paragraph 23: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-023
+cat("LONG_BLOCK_023\n")
+```
+
+## Section 024
+
+Paragraph 24: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-024
+cat("LONG_BLOCK_024\n")
+```
+
+## Section 025
+
+Paragraph 25: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-025
+cat("LONG_BLOCK_025\n")
+```
+
+## Section 026
+
+Paragraph 26: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-026
+cat("LONG_BLOCK_026\n")
+```
+
+## Section 027
+
+Paragraph 27: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-027
+cat("LONG_BLOCK_027\n")
+```
+
+## Section 028
+
+Paragraph 28: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-028
+cat("LONG_BLOCK_028\n")
+```
+
+## Section 029
+
+Paragraph 29: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-029
+cat("LONG_BLOCK_029\n")
+```
+
+## Section 030
+
+Paragraph 30: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-030
+cat("LONG_BLOCK_030\n")
+```
+
+### Repeated heading
+
+Nested heading with a repeated label in the navigation only.
+
+## Section 031
+
+Paragraph 31: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-031
+cat("LONG_BLOCK_031\n")
+```
+
+## Section 032
+
+Paragraph 32: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-032
+cat("LONG_BLOCK_032\n")
+```
+
+## Section 033
+
+Paragraph 33: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-033
+cat("LONG_BLOCK_033\n")
+```
+
+## Section 034
+
+Paragraph 34: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-034
+cat("LONG_BLOCK_034\n")
+```
+
+## Section 035
+
+Paragraph 35: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-035
+cat("LONG_BLOCK_035\n")
+```
+
+## Section 036
+
+Paragraph 36: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-036
+cat("LONG_BLOCK_036\n")
+```
+
+## Section 037
+
+Paragraph 37: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-037
+cat("LONG_BLOCK_037\n")
+```
+
+## Section 038
+
+Paragraph 38: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-038
+cat("LONG_BLOCK_038\n")
+```
+
+## Section 039
+
+Paragraph 39: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-039
+cat("LONG_BLOCK_039\n")
+```
+
+## Section 040
+
+Paragraph 40: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-040
+cat("LONG_BLOCK_040\n")
+```
+
+## Section 041
+
+Paragraph 41: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-041
+cat("LONG_BLOCK_041\n")
+```
+
+## Section 042
+
+Paragraph 42: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-042
+cat("LONG_BLOCK_042\n")
+```
+
+## Section 043
+
+Paragraph 43: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-043
+cat("LONG_BLOCK_043\n")
+```
+
+## Section 044
+
+Paragraph 44: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-044
+cat("LONG_BLOCK_044\n")
+```
+
+## Section 045
+
+Paragraph 45: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-045
+cat("LONG_BLOCK_045\n")
+```
+
+### Repeated heading
+
+Nested heading with a repeated label in the navigation only.
+
+## Section 046
+
+Paragraph 46: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-046
+cat("LONG_BLOCK_046\n")
+```
+
+## Section 047
+
+Paragraph 47: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-047
+cat("LONG_BLOCK_047\n")
+```
+
+## Section 048
+
+Paragraph 48: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-048
+cat("LONG_BLOCK_048\n")
+```
+
+## Section 049
+
+Paragraph 49: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-049
+cat("LONG_BLOCK_049\n")
+```
+
+## Section 050
+
+Paragraph 50: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-050
+cat("LONG_BLOCK_050\n")
+```
+
+## Section 051
+
+Paragraph 51: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-051
+cat("LONG_BLOCK_051\n")
+```
+
+## Section 052
+
+Paragraph 52: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-052
+cat("LONG_BLOCK_052\n")
+```
+
+## Section 053
+
+Paragraph 53: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-053
+cat("LONG_BLOCK_053\n")
+```
+
+## Section 054
+
+Paragraph 54: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-054
+cat("LONG_BLOCK_054\n")
+```
+
+## Section 055
+
+Paragraph 55: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-055
+cat("LONG_BLOCK_055\n")
+```
+
+## Section 056
+
+Paragraph 56: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-056
+cat("LONG_BLOCK_056\n")
+```
+
+## Section 057
+
+Paragraph 57: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-057
+cat("LONG_BLOCK_057\n")
+```
+
+## Section 058
+
+Paragraph 58: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-058
+cat("LONG_BLOCK_058\n")
+```
+
+## Section 059
+
+Paragraph 59: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-059
+cat("LONG_BLOCK_059\n")
+```
+
+## Section 060
+
+Paragraph 60: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-060
+cat("LONG_BLOCK_060\n")
+```
+
+### Repeated heading
+
+Nested heading with a repeated label in the navigation only.
+
+## Section 061
+
+Paragraph 61: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-061
+cat("LONG_BLOCK_061\n")
+```
+
+## Section 062
+
+Paragraph 62: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-062
+cat("LONG_BLOCK_062\n")
+```
+
+## Section 063
+
+Paragraph 63: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-063
+cat("LONG_BLOCK_063\n")
+```
+
+## Section 064
+
+Paragraph 64: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-064
+cat("LONG_BLOCK_064\n")
+```
+
+## Section 065
+
+Paragraph 65: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-065
+cat("LONG_BLOCK_065\n")
+```
+
+## Section 066
+
+Paragraph 66: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-066
+cat("LONG_BLOCK_066\n")
+```
+
+## Section 067
+
+Paragraph 67: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-067
+cat("LONG_BLOCK_067\n")
+```
+
+## Section 068
+
+Paragraph 68: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-068
+cat("LONG_BLOCK_068\n")
+```
+
+## Section 069
+
+Paragraph 69: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-069
+cat("LONG_BLOCK_069\n")
+```
+
+## Section 070
+
+Paragraph 70: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-070
+cat("LONG_BLOCK_070\n")
+```
+
+## Section 071
+
+Paragraph 71: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-071
+cat("LONG_BLOCK_071\n")
+```
+
+## Section 072
+
+Paragraph 72: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-072
+cat("LONG_BLOCK_072\n")
+```
+
+## Section 073
+
+Paragraph 73: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-073
+cat("LONG_BLOCK_073\n")
+```
+
+## Section 074
+
+Paragraph 74: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-074
+cat("LONG_BLOCK_074\n")
+```
+
+## Section 075
+
+Paragraph 75: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-075
+cat("LONG_BLOCK_075\n")
+```
+
+### Repeated heading
+
+Nested heading with a repeated label in the navigation only.
+
+## Section 076
+
+Paragraph 76: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-076
+cat("LONG_BLOCK_076\n")
+```
+
+## Section 077
+
+Paragraph 77: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-077
+cat("LONG_BLOCK_077\n")
+```
+
+## Section 078
+
+Paragraph 78: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-078
+cat("LONG_BLOCK_078\n")
+```
+
+## Section 079
+
+Paragraph 79: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-079
+cat("LONG_BLOCK_079\n")
+```
+
+## Section 080
+
+Paragraph 80: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-080
+cat("LONG_BLOCK_080\n")
+```
+
+## Section 081
+
+Paragraph 81: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-081
+cat("LONG_BLOCK_081\n")
+```
+
+## Section 082
+
+Paragraph 82: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-082
+cat("LONG_BLOCK_082\n")
+```
+
+## Section 083
+
+Paragraph 83: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-083
+cat("LONG_BLOCK_083\n")
+```
+
+## Section 084
+
+Paragraph 84: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-084
+cat("LONG_BLOCK_084\n")
+```
+
+## Section 085
+
+Paragraph 85: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-085
+cat("LONG_BLOCK_085\n")
+```
+
+## Section 086
+
+Paragraph 86: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-086
+cat("LONG_BLOCK_086\n")
+```
+
+## Section 087
+
+Paragraph 87: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-087
+cat("LONG_BLOCK_087\n")
+```
+
+## Section 088
+
+Paragraph 88: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-088
+cat("LONG_BLOCK_088\n")
+```
+
+## Section 089
+
+Paragraph 89: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-089
+cat("LONG_BLOCK_089\n")
+```
+
+## Section 090
+
+Paragraph 90: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-090
+cat("LONG_BLOCK_090\n")
+```
+
+### Repeated heading
+
+Nested heading with a repeated label in the navigation only.
+
+## Section 091
+
+Paragraph 91: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-091
+cat("LONG_BLOCK_091\n")
+```
+
+## Section 092
+
+Paragraph 92: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-092
+cat("LONG_BLOCK_092\n")
+```
+
+## Section 093
+
+Paragraph 93: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-093
+cat("LONG_BLOCK_093\n")
+```
+
+## Section 094
+
+Paragraph 94: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-094
+cat("LONG_BLOCK_094\n")
+```
+
+## Section 095
+
+Paragraph 95: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-095
+cat("LONG_BLOCK_095\n")
+```
+
+## Section 096
+
+Paragraph 96: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-096
+cat("LONG_BLOCK_096\n")
+```
+
+## Section 097
+
+Paragraph 97: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-097
+cat("LONG_BLOCK_097\n")
+```
+
+## Section 098
+
+Paragraph 98: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-098
+cat("LONG_BLOCK_098\n")
+```
+
+## Section 099
+
+Paragraph 99: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-099
+cat("LONG_BLOCK_099\n")
+```
+
+## Section 100
+
+Paragraph 100: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-100
+cat("LONG_BLOCK_100\n")
+```
+
+## Section 101
+
+Paragraph 101: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-101
+cat("LONG_BLOCK_101\n")
+```
+
+## Section 102
+
+Paragraph 102: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-102
+cat("LONG_BLOCK_102\n")
+```
+
+## Section 103
+
+Paragraph 103: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-103
+cat("LONG_BLOCK_103\n")
+```
+
+## Section 104
+
+Paragraph 104: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-104
+cat("LONG_BLOCK_104\n")
+```
+
+## Section 105
+
+Paragraph 105: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-105
+cat("LONG_BLOCK_105\n")
+```
+
+### Repeated heading
+
+Nested heading with a repeated label in the navigation only.
+
+## Section 106
+
+Paragraph 106: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-106
+cat("LONG_BLOCK_106\n")
+```
+
+## Section 107
+
+Paragraph 107: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-107
+cat("LONG_BLOCK_107\n")
+```
+
+## Section 108
+
+Paragraph 108: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-108
+cat("LONG_BLOCK_108\n")
+```
+
+## Section 109
+
+Paragraph 109: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-109
+cat("LONG_BLOCK_109\n")
+```
+
+## Section 110
+
+Paragraph 110: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-110
+cat("LONG_BLOCK_110\n")
+```
+
+## Section 111
+
+Paragraph 111: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-111
+cat("LONG_BLOCK_111\n")
+```
+
+## Section 112
+
+Paragraph 112: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-112
+cat("LONG_BLOCK_112\n")
+```
+
+## Section 113
+
+Paragraph 113: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-113
+cat("LONG_BLOCK_113\n")
+```
+
+## Section 114
+
+Paragraph 114: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-114
+cat("LONG_BLOCK_114\n")
+```
+
+## Section 115
+
+Paragraph 115: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-115
+cat("LONG_BLOCK_115\n")
+```
+
+## Section 116
+
+Paragraph 116: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-116
+cat("LONG_BLOCK_116\n")
+```
+
+## Section 117
+
+Paragraph 117: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-117
+cat("LONG_BLOCK_117\n")
+```
+
+## Section 118
+
+Paragraph 118: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-118
+cat("LONG_BLOCK_118\n")
+```
+
+## Section 119
+
+Paragraph 119: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-119
+cat("LONG_BLOCK_119\n")
+```
+
+## Section 120
+
+Paragraph 120: 中文 😀 café café needle NEEDLE needle_word. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. This line deliberately wraps in a narrow editor. 
+
+```{r}
+#| label: long-120
+cat("LONG_BLOCK_120\n")
+```
+
+### Repeated heading
+
+Nested heading with a repeated label in the navigation only.
+
+# End
+
+LONG_DOCUMENT_END
