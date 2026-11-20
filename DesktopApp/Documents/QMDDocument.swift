@@ -78,7 +78,7 @@ import EdmundCore
         }
         MainActor.assumeIsolated {
             reading = true; model.source = text; reading = false
-            if [NotebookDocumentType.quarto, NotebookDocumentType.rMarkdown].contains(typeName) { fileType = typeName }
+            if let canonicalType = NotebookDocumentType.canonicalIdentifier(for: typeName) { fileType = canonicalType }
             cleanSourceHash = DocumentRevision(text: text).rawValue
             sourceIsModified = false
             if let fileURL { synchronization.received(text, at: fileURL) }

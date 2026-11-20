@@ -4,9 +4,11 @@ Rnotebook is intentionally narrower than a full IDE or a general R GUI.
 
 ## Platform and distribution
 
-- The deployment target is macOS 14. The current release was built and tested
-  on macOS 27 arm64. macOS 14 and Intel hardware have not been physically
-  re-tested for this release.
+- The deployment target is macOS 14. The 0.1.0 release was built and tested
+  on macOS 27 arm64. The 0.1.1 and 0.1.2 file-type compatibility updates are compiled and
+  packaged without local test execution, at the user's request; Finder, Open
+  dialog and Quick Look behavior must be accepted on the affected computer.
+  macOS 14 and Intel hardware have not been physically re-tested.
 - The Intel app is cross-compiled and statically verified on an arm64 machine.
   Its R/Qt/Chrome payloads are x86_64, but it should be treated as a preview
   until run on an Intel Mac.
@@ -27,7 +29,19 @@ Rnotebook is intentionally narrower than a full IDE or a general R GUI.
   application is not implemented in this release. The app declares both
   document types; choose the default in Finder's Get Info or System Settings.
   Quick Look is installed with the app and may need to be enabled in
-  Extensions settings.
+  Extensions settings. The 0.1.1 app and preview extension support
+  `org.quarto.qmarkdown` / `com.rstudio.rmarkdown` as well as the old
+  `org.quarto.qmd` / `org.hiox.Rnotebook.rmd` identifiers. The Open dialog
+  uses case-insensitive filename extensions rather than relying on the
+  system's preferred UTI. Declaring support does not change the user's
+  default application or force Quick Look to enable/select the extension.
+  On the affected computer, follow-up output still showed the 0.1.0 app and
+  preview extension under `/Applications`; that feedback did not establish
+  a failure of the installed 0.1.1 build. Version 0.1.2 includes an app-only
+  installer that verifies the installed app and extension versions and attempts
+  targeted registration refresh. Its postinstall has not been executed on
+  this build machine. Directly launching an app from a DMG does not update
+  the copy in `/Applications`.
 - The PKG's optional PATH links are off by default and never overwrite an
   existing `/usr/local/bin` command. Existing shell sessions do not pick up new
   links automatically.

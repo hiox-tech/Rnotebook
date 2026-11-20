@@ -13,9 +13,9 @@
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSExtension</key>
@@ -28,7 +28,9 @@
 		<dict>
 			<key>QLSupportedContentTypes</key>
 			<array>
+				<string>org.quarto.qmarkdown</string>
 				<string>org.quarto.qmd</string>
+				<string>com.rstudio.rmarkdown</string>
 				<string>org.hiox.Rnotebook.rmd</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>

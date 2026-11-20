@@ -718,6 +718,13 @@
 			"name" = "AppShell";
 			"sourceTree" = "<group>";
 		};
+		"49236D6E4B5B9617D60B7EDF" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"name" = "DocumentTypeCompatibilityTests.swift";
+			"path" = "Tests/Unit/DocumentTypeCompatibilityTests.swift";
+			"sourceTree" = "SOURCE_ROOT";
+		};
 		"4957C7C9DFED18DA210BF0F6" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -917,6 +924,10 @@
 		};
 		"57D68C00FF2879642C6A7243" = {
 			"fileRef" = "9D0160769BCC0455D5189448";
+			"isa" = "PBXBuildFile";
+		};
+		"580DD97ADF6D9730CA4B974B" = {
+			"fileRef" = "7453EEA454E2206720BD9D59";
 			"isa" = "PBXBuildFile";
 		};
 		"587CF1DBB41BC60F8C067176" = {
@@ -1137,11 +1148,22 @@
 			"fileRef" = "738DC84F88F21B720957E2E5";
 			"isa" = "PBXBuildFile";
 		};
+		"73E5E52CBD85256E7194FC92" = {
+			"fileRef" = "49236D6E4B5B9617D60B7EDF";
+			"isa" = "PBXBuildFile";
+		};
 		"74304FD1F85AF20C4EE87D1D" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
 			"name" = "RecordFencePresentationCache.swift";
 			"path" = "DesktopApp/AppShell/RecordFencePresentationCache.swift";
+			"sourceTree" = "SOURCE_ROOT";
+		};
+		"7453EEA454E2206720BD9D59" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"name" = "NotebookDocumentDiagnostics.swift";
+			"path" = "DesktopApp/Documents/NotebookDocumentDiagnostics.swift";
 			"sourceTree" = "SOURCE_ROOT";
 		};
 		"74BA17E7BECAD9F57D9A213A" = {
@@ -1177,6 +1199,7 @@
 				"2891659B178E526D8E8968EC",
 				"1FC7669A33429C2E4A7DECF9",
 				"08EB7C22113670EEEB761058",
+				"73E5E52CBD85256E7194FC92",
 				"587CF1DBB41BC60F8C067176",
 				"CAF26B3FB2747967817546D8",
 				"5DC367392BF00F6478F96A82",
@@ -1315,6 +1338,8 @@
 				"642F35B62C524D10C363C96E",
 				"B0D0CF8E77582DE344AC2DEC",
 				"49F567C6ACAA5403A1FE449A",
+				"8A144287804786832D611326",
+				"7453EEA454E2206720BD9D59",
 			);
 			"isa" = "PBXGroup";
 			"name" = "Documents";
@@ -1379,6 +1404,13 @@
 			"lastKnownFileType" = "sourcecode.swift";
 			"name" = "DocumentRevision.swift";
 			"path" = "DesktopApp/Editor/CellIndex/DocumentRevision.swift";
+			"sourceTree" = "SOURCE_ROOT";
+		};
+		"8A144287804786832D611326" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"name" = "NotebookOpenPanelDelegate.swift";
+			"path" = "DesktopApp/Documents/NotebookOpenPanelDelegate.swift";
 			"sourceTree" = "SOURCE_ROOT";
 		};
 		"8A417FCCE9E8F6F5FC87050A" = {
@@ -1506,10 +1538,12 @@
 			"buildSettings" = {
 				"APPLICATION_EXTENSION_API_ONLY" = "YES";
 				"CODE_SIGN_ENTITLEMENTS" = "QuickLook/Preview.entitlements";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"ENABLE_APP_SANDBOX" = "YES";
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"INFOPLIST_FILE" = "QuickLook/Info.plist";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				"MARKETING_VERSION" = "0.1.2";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(RNOTEBOOK_PREVIEW_ID)";
 				"PRODUCT_NAME" = "RnotebookPreview";
 				"RNOTEBOOK_PREVIEW_ID" = "org.hiox.Rnotebook.Preview";
@@ -1671,10 +1705,12 @@
 			"buildSettings" = {
 				"APPLICATION_EXTENSION_API_ONLY" = "YES";
 				"CODE_SIGN_ENTITLEMENTS" = "QuickLook/Preview.entitlements";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"ENABLE_APP_SANDBOX" = "YES";
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"INFOPLIST_FILE" = "QuickLook/Info.plist";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				"MARKETING_VERSION" = "0.1.2";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(RNOTEBOOK_PREVIEW_ID)";
 				"PRODUCT_NAME" = "RnotebookPreview";
 				"RNOTEBOOK_PREVIEW_ID" = "org.hiox.Rnotebook.Preview";
@@ -1709,6 +1745,10 @@
 			"name" = "ExecutionPolicyTests.swift";
 			"path" = "Tests/Unit/ExecutionPolicyTests.swift";
 			"sourceTree" = "SOURCE_ROOT";
+		};
+		"AC7D2E9A31E84B175FB19574" = {
+			"fileRef" = "8A144287804786832D611326";
+			"isa" = "PBXBuildFile";
 		};
 		"AE828BE12FBA2B7982F7F520" = {
 			"fileRef" = "926F8219AD1D1EAB3A0FA7BA";
@@ -2240,14 +2280,14 @@
 		"EC50D59D23689A19A70BDB64" = {
 			"baseConfigurationReference" = "513804B2957FB72C4F7A17B1";
 			"buildSettings" = {
-				"CURRENT_PROJECT_VERSION" = "2";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"INFOPLIST_FILE" = "Config/Info.plist";
 				"INFOPLIST_KEY_CFBundleDisplayName" = "Rnotebook";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.productivity";
 				"INFOPLIST_KEY_NSPrincipalClass" = "NSApplication";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
-				"MARKETING_VERSION" = "0.1.1";
+				"MARKETING_VERSION" = "0.1.2";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(RNOTEBOOK_APP_ID)";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
 				"RNOTEBOOK_APP_ID" = "org.hiox.Rnotebook";
@@ -2286,14 +2326,14 @@
 		"EDAFBC566ED0A0398DD08AB5" = {
 			"baseConfigurationReference" = "7326A50204128321A8234000";
 			"buildSettings" = {
-				"CURRENT_PROJECT_VERSION" = "2";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"INFOPLIST_FILE" = "Config/Info.plist";
 				"INFOPLIST_KEY_CFBundleDisplayName" = "Rnotebook";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.productivity";
 				"INFOPLIST_KEY_NSPrincipalClass" = "NSApplication";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/../Frameworks";
-				"MARKETING_VERSION" = "0.1.1";
+				"MARKETING_VERSION" = "0.1.2";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(RNOTEBOOK_APP_ID)";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
 				"RNOTEBOOK_APP_ID" = "org.hiox.Rnotebook";
@@ -2417,7 +2457,9 @@
 				"F2D6AC3BE9F0862817A47086",
 				"0840B3CEE9BC227957FB8359",
 				"8F7C3C2BFF0DB8ACB43D90B2",
+				"580DD97ADF6D9730CA4B974B",
 				"3700AC383ECD24852E9F84D9",
+				"AC7D2E9A31E84B175FB19574",
 				"B4CCBCA7E9482AC838F158B7",
 				"B30ED09CF9C523C670D1AE69",
 				"448D12E786DFD27FD4E5C692",

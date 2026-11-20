@@ -129,8 +129,9 @@ ignored by Git. The reproducible outline is:
 8. Mount every DMG read-only and verify `lipo -archs`, `codesign --verify
    --deep --strict` and the `Applications` symlink.
 9. Expand each PKG and compare its component `Payload`, `Bom` and `PackageInfo`
-   with the previous product; only `Distribution`, `Resources` and the
-   preflight package should change. Run
+   with the previous product. For an application update, verify the new app
+   payload and matching app/extension version metadata; preserve the runtime
+   component bytes unless those components are explicitly being updated. Run
    `installer -pkg ... -target / -showChoicesXML` for both architectures.
 
 The exact component versions and source URLs used for this release are listed
@@ -144,3 +145,65 @@ notarized release, replace it with a Developer ID Application identity, sign
 the embedded Quick Look extension and language tools, build the product
 archive with a Developer ID Installer identity, then notarize and staple both
 the app and the installer. Ad-hoc builds are not a substitute for notarization.
+
+## File-type compatibility release acceptance
+
+Version 0.1.1 adds `org.quarto.qmarkdown` and `com.rstudio.rmarkdown` to the
+app and Quick Look declarations, retaining both 0.1.0 identifiers. The Open
+panel uses an extension-based delegate so conflicting or dynamic UTIs cannot
+disable QMD/RMD files. Both the application and extension use version 0.1.1,
+build 2; the project sync script supplies these values.
+
+Local tests were not run for this update at the user's request. Before
+calling the issue resolved, install the new build on the affected computer,
+quit the previous app first, and verify each of the following separately:
+
+- Finder recommends Rnotebook for QMD and RMD files.
+- File > Open enables existing `.qmd`, `.QMD`, `.rmd`, `.Rmd`, and `.RMD`
+  documents while rejecting unrelated files; folders remain navigable.
+- New, Open, save, and reopen retain the document extension and source.
+- Finder Space previews both formats using the Rnotebook Code/Visual UI.
+  An installed extension notification alone does not verify provider selection.
+
+If Quick Look still fails, record the current file UTIs with `mdls`, the
+extension state/version with `pluginkit -m -A -D -i org.hiox.Rnotebook.Preview`,
+and extension launch errors. Do not change all plain-text file associations
+or clear the entire Launch Services database as an installation step.
+
+## Version 0.1.2 app-only update
+
+The app and extension use version 0.1.2, build 3. The app now creates a fresh
+public NSOpenPanel with its own delegate. It does not forward the document
+controller's type-filtering callbacks. Supported suffixes remain selectable
+without requiring complete resource metadata; selected documents are still
+validated and opened through NSDocumentController.
+
+Include `scripts/installer` as the `pkgbuild --scripts` directory for the app
+component. Use a non-relocatable component with install location `/` and root
+path `Applications/Rnotebook.app`. The same app component is also distributed
+as `Rnotebook-0.1.2-{arm64,x86_64}-app-only.pkg`; it installs no offline runtime.
+The postinstall verifies both installed bundles are version 0.1.2/build 3,
+then attempts to register that app and extension for the console user. It
+neither changes default handlers nor forces extension enablement. This
+postinstall is packaged and statically checked, not executed locally.
+
+Follow-up evidence from the affected computer showed that its installed app
+and registered preview were still 0.1.0. Always verify the installed version
+before interpreting acceptance results. Version 0.1.1 functionality was not
+established to have failed by that evidence.
+
+For read-only diagnostics without Xcode or a Swift installation, run the
+installed application executable directly. This mode prints JSON and exits
+without opening the UI or changing registrations:
+
+```sh
+/Applications/Rnotebook.app/Contents/MacOS/Rnotebook --diagnose-document-types \
+  "/actual/path/document.qmd" "/actual/path/document.Rmd"
+```
+
+The report includes the executing app path and version, registered copies,
+live file UTIs, extension-to-type mappings, candidate/default applications,
+and the bundled preview's version and supported types. It does not prove that
+the preview extension was enabled, selected, or launched; inspect `pluginkit`
+and system logs separately if needed. Local functional tests remain deferred
+to the affected computer at the user's request.

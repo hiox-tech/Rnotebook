@@ -76,7 +76,7 @@ import XCTest
         try await settle()
         let window = try XCTUnwrap(doc.windowControllers.first?.window)
         XCTAssertTrue(QMDDocument.autosavesInPlace)
-        XCTAssertEqual(doc.fileType, "org.quarto.qmd")
+        XCTAssertEqual(doc.fileType, NotebookDocumentType.quarto)
         XCTAssertEqual(window.titleVisibility, .visible)
         XCTAssertNil(window.representedURL)
         XCTAssertEqual(window.titlebarAccessoryViewControllers.count, 0)

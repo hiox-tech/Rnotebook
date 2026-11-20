@@ -23,13 +23,14 @@
 				<string>qmd</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>org.quarto.qmd</string>
+			<string>org.quarto.qmarkdown</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Default</string>
 			<key>LSItemContentTypes</key>
 			<array>
+				<string>org.quarto.qmarkdown</string>
 				<string>org.quarto.qmd</string>
 			</array>
 			<key>NSDocumentClass</key>
@@ -44,13 +45,14 @@
 				<string>Rmd</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>org.hiox.Rnotebook.rmd</string>
+			<string>com.rstudio.rmarkdown</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Default</string>
 			<key>LSItemContentTypes</key>
 			<array>
+				<string>com.rstudio.rmarkdown</string>
 				<string>org.hiox.Rnotebook.rmd</string>
 			</array>
 			<key>NSDocumentClass</key>
@@ -70,9 +72,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -81,6 +83,43 @@
 	<string>NSApplication</string>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Quarto Markdown</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.quarto.qmarkdown</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>qmd</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.rstudio.rmarkdown</string>
+			<key>UTTypeDescription</key>
+			<string>R Markdown</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rmd</string>
+					<string>Rmd</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>text/x-r-markdown</string>
+			</dict>
+		</dict>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>

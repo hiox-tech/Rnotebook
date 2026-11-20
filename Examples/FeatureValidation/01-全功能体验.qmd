@@ -63,17 +63,15 @@ $$
 s^2=\frac{1}{n-1}\sum_{i=1}^{n}(x_i-\bar{x})^2
 $$
 
-![本地模拟数据示意图](assets/workflow.png){width=65%}
+![本地模拟数据示意图](assets/workflow.png)
 
-::: {.content-visible when-format="html"}
-```{mermaid}
+```mermaid
 flowchart LR
   A[本地 CSV] --> B[清洗与核对]
   B --> C[统计与图形]
   C --> D[变量检查]
   C --> E[Quarto 报告]
 ```
-:::
 
 ::: {.callout-note}
 ## 原生提示块

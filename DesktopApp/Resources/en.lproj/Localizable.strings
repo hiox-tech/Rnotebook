@@ -992,3 +992,5 @@
 "注释斜体" = "Italic Comments";
 "关键字加粗" = "Bold Keywords";
 "预览" = "Preview";
+
+"请选择 .qmd 或 .Rmd 文稿。" = "Choose a .qmd or .Rmd document.";

@@ -222,7 +222,7 @@ import XCTest
         defer { doc.close() }
         XCTAssertTrue(controller.documents.contains { $0 === doc })
         XCTAssertNil(doc.fileURL); XCTAssertFalse(doc.isDocumentEdited)
-        XCTAssertEqual(doc.fileType, "org.quarto.qmd")
+        XCTAssertEqual(doc.fileType, NotebookDocumentType.quarto)
         doc.model.source = "先写的中文正文\n"
         await doc.synchronization.saveNow()
         XCTAssertNil(doc.fileURL)

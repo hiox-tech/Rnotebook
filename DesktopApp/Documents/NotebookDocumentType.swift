@@ -1,12 +1,26 @@
 import Foundation
 
 enum NotebookDocumentType {
-    static let quarto = "org.quarto.qmd"
-    static let rMarkdown = "org.hiox.Rnotebook.rmd"
+    static let quarto = "org.quarto.qmarkdown"
+    static let rMarkdown = "com.rstudio.rmarkdown"
+    static let legacyQuarto = "org.quarto.qmd"
+    static let legacyRMarkdown = "org.hiox.Rnotebook.rmd"
+
+    static func canonicalIdentifier(for identifier: String) -> String? {
+        switch identifier.lowercased() {
+        case quarto, legacyQuarto: quarto
+        case rMarkdown, legacyRMarkdown: rMarkdown
+        default: nil
+        }
+    }
+
+    static func supports(_ url: URL) -> Bool {
+        url.isFileURL && ["qmd", "rmd"].contains(url.pathExtension.lowercased())
+    }
 
     static func displayName(for identifier: String, extension suffix: String? = nil) -> String? {
-        if identifier.caseInsensitiveCompare(quarto) == .orderedSame || suffix?.lowercased() == "qmd" { return "Quarto(.qmd)" }
-        if identifier.caseInsensitiveCompare(rMarkdown) == .orderedSame || suffix?.lowercased() == "rmd" { return "R Markdown(.Rmd)" }
+        if canonicalIdentifier(for: identifier) == quarto || suffix?.lowercased() == "qmd" { return "Quarto(.qmd)" }
+        if canonicalIdentifier(for: identifier) == rMarkdown || suffix?.lowercased() == "rmd" { return "R Markdown(.Rmd)" }
         return nil
     }
 

@@ -1,0 +1,35 @@
+#!/bin/bash
+# Verify the installed copy, then refresh only this app's registrations for
+# the graphical user. Do not change default handlers or enable extensions.
+set -eu
+
+target_volume="${3:-/}"
+installed_app="${target_volume%/}/Applications/Rnotebook.app"
+preview="$installed_app/Contents/PlugIns/RnotebookPreview.appex"
+for info in "$installed_app/Contents/Info.plist" "$preview/Contents/Info.plist"; do
+    version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info")
+    build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info")
+    if [ "$version" != '0.1.2' ] || [ "$build" != '3' ]; then
+        echo "Rnotebook: installed version verification failed for $info ($version, build $build)" >&2
+        exit 1
+    fi
+done
+echo 'Rnotebook: verified installed app and Quick Look extension 0.1.2 (build 3)'
+
+# A different target volume or a non-GUI installation has no active user
+# registration to refresh. Launching the installed app will register it later.
+[ "$target_volume" = '/' ] || exit 0
+console_user=$(/usr/bin/stat -f '%Su' /dev/console)
+console_uid=$(/usr/bin/stat -f '%u' /dev/console)
+case "$console_user" in root|loginwindow|_mbsetupuser|'') exit 0 ;; esac
+[ "$console_uid" -ge 501 ] || exit 0
+lsregister='/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
+if ! /bin/launchctl asuser "$console_uid" /usr/bin/sudo -u "$console_user" \
+    "$lsregister" -f "$installed_app"; then
+    echo 'Rnotebook: app registration refresh unavailable; launch /Applications/Rnotebook.app after installation' >&2
+fi
+if ! /bin/launchctl asuser "$console_uid" /usr/bin/sudo -u "$console_user" \
+    /usr/bin/pluginkit -a "$preview"; then
+    echo 'Rnotebook: extension registration refresh unavailable; launch the installed app and check Extensions settings' >&2
+fi
+exit 0

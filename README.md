@@ -36,16 +36,28 @@ The application works directly with plain `.qmd` / `.Rmd` source files and manag
 
   **Native document handling and bilingual UI:** Features include autosave, external-change detection and merging, recovery of unsaved documents, per-document window state, and read-only comparison, with Chinese and English menus, settings, and in-app help.
 
+## 文件类型兼容与应用更新 / File type compatibility and application updates
+
+应用与 Quick Look 扩展新增对 `org.quarto.qmarkdown` 和 `com.rstudio.rmarkdown` 的支持，并兼容 0.1.0 的旧类型标识。打开面板按 `.qmd` / `.rmd` 扩展名筛选，忽略大小写，避免因系统识别为其他 UTI 而将文稿置灰。0.1.2 改为独立打开面板，避免继承文档控制器的类型限制；文件可选性不再依赖完整的元数据。新增仅更新应用的 PKG，固定安装到 `/Applications` 并核对应用和预览插件版本。按用户要求未运行本机功能测试，实际行为需在问题电脑验收。
+
+The application and Quick Look extension now support `org.quarto.qmarkdown` and `com.rstudio.rmarkdown`, while retaining the legacy identifiers used by 0.1.0. The Open dialog filters `.qmd` / `.rmd` filenames without regard to case, avoiding disabled documents when the system assigns a different UTI. Version 0.1.2 uses an independent Open panel to avoid inherited document-controller restrictions and no longer requires complete metadata to enable a supported filename. An app-only PKG installs to `/Applications` and verifies the app and preview extension versions. Local functional tests were not run at the user's request; acceptance on the affected computer is pending.
+
 ## 安装包 / Distribution
 
-当前本地 `dist/` 目录包含以下 0.1.0 安装产物。该目录被 Git 忽略，不随源码克隆；公开下载是否可用，以仓库实际发布的 Release 附件为准。
+当前本地 `dist/` 目录包含以下 0.1.2 安装产物。该目录被 Git 忽略，不随源码克隆；公开下载是否可用，以仓库实际发布的 Release 附件为准。
 
-The local `dist/` directory currently contains the following 0.1.0 artifacts. This directory is excluded from Git and is not included in a source clone. Public download availability depends on the assets actually published with a repository release.
+The local `dist/` directory currently contains the following 0.1.2 artifacts. This directory is excluded from Git and is not included in a source clone. Public download availability depends on the assets actually published with a repository release.
 
-| 架构 / Architecture | 仅应用 / Application only | 含可选离线组件 / With optional offline components |
-| --- | --- | --- |
-| Apple silicon（arm64） | `Rnotebook-0.1.0-arm64.dmg` | `Rnotebook-0.1.0-arm64.pkg` |
-| Intel（x86_64） | `Rnotebook-0.1.0-x86_64.dmg` | `Rnotebook-0.1.0-x86_64.pkg` |
+| 架构 / Architecture | 应用更新包 / App-only installer | DMG | 完整离线包 / Full offline installer |
+| --- | --- | --- | --- |
+| Apple silicon（arm64） | `Rnotebook-0.1.2-arm64-app-only.pkg` | `Rnotebook-0.1.2-arm64.dmg` | `Rnotebook-0.1.2-arm64.pkg` |
+| Intel（x86_64） | `Rnotebook-0.1.2-x86_64-app-only.pkg` | `Rnotebook-0.1.2-x86_64.dmg` | `Rnotebook-0.1.2-x86_64.pkg` |
+
+### 应用更新包 / App-only installer
+
+已有运行环境时，推荐使用 `app-only.pkg`。安装前退出旧版应用，安装后从 `/Applications/Rnotebook.app` 启动并确认版本为 0.1.2。仅从 DMG 启动应用不会替换 `/Applications` 中的旧副本。安装脚本验证应用与预览扩展的版本，尝试为当前图形登录用户刷新该应用及扩展的注册，不修改默认打开方式或扩展启用偏好。
+
+Use `app-only.pkg` when a runtime is already installed. Quit the old app first, then launch `/Applications/Rnotebook.app` after installation and confirm version 0.1.2. Launching an app from a DMG does not replace the installed copy. The installer verifies app and preview extension versions and attempts to refresh their registrations for the active graphical user without changing default handlers or extension enablement preferences.
 
 ### DMG
 

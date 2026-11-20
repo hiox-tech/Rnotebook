@@ -7,6 +7,10 @@ import UniformTypeIdentifiers
     static var delegate: RnotebookDelegate?
     private static let documents = QMDDocumentController()
     static func main() {
+        if CommandLine.arguments.dropFirst().first == "--diagnose-document-types" {
+            NotebookDocumentDiagnostics.write(paths: Array(CommandLine.arguments.dropFirst(2)))
+            return
+        }
         let app = NSApplication.shared
         // Documents may open in separate windows, never in native tabs.
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -196,53 +200,68 @@ import UniformTypeIdentifiers
     }
 }
 
-/// AppKit owns the browser, document creation, file type selection and errors.
-/// The only addition to its open panel is a standard native New button, so a
-/// user can start writing without cancelling the browser or naming a file.
+/// Own the picker and its suffix filter; NSDocumentController still owns
+/// document creation, duplicate-open handling, reading, and errors.
 @MainActor final class QMDDocumentController: NSDocumentController {
     override func displayName(forType typeName: String) -> String? {
         NotebookDocumentType.displayName(for: typeName) ?? super.displayName(forType: typeName)
     }
     override func typeForContents(of url: URL) throws -> String {
-        if ["qmd", "rmd"].contains(url.pathExtension.lowercased()) {
+        if NotebookDocumentType.supports(url) {
             return NotebookDocumentType.identifier(for: url)
         }
         return try super.typeForContents(of: url)
     }
     private(set) var activeOpenPanel: NSOpenPanel?
+    private var openPanelDelegate: NotebookOpenPanelDelegate?
+    private var lastOpenDirectory: URL?
     override func openDocument(_ sender: Any?) {
-        if let activeOpenPanel { activeOpenPanel.makeKeyAndOrderFront(sender) }
-        else { super.openDocument(sender) }
+        if let activeOpenPanel { activeOpenPanel.makeKeyAndOrderFront(sender); return }
+        // Starting with NSDocumentController's panel can carry private type
+        // filtering beyond allowedContentTypes. Use a fresh public panel.
+        let panel = NSOpenPanel()
+        panel.directoryURL = lastOpenDirectory ?? currentDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        beginOpenPanel(panel, forTypes: nil) { [weak self] result in
+            guard result == NSApplication.ModalResponse.OK.rawValue, let self else { return }
+            let urls = panel.urls
+            if let first = urls.first { lastOpenDirectory = first.deletingLastPathComponent() }
+            Task { @MainActor in
+                for url in urls {
+                    do { _ = try await openDocument(withContentsOf: url, display: true) }
+                    catch { presentError(error) }
+                }
+            }
+        }
     }
     override func beginOpenPanel(_ openPanel: NSOpenPanel, forTypes inTypes: [String]?, completionHandler: @escaping (Int) -> Void) {
         activeOpenPanel = openPanel
-        openPanel.allowedContentTypes = (inTypes ?? []).compactMap { UTType($0) ?? UTType(filenameExtension: $0) }
-        openPanel.canChooseFiles = true
-        openPanel.canChooseDirectories = false
-        openPanel.allowsMultipleSelection = true
-        openPanel.accessoryView = nil
-        // AppKit's own New Document action occupies the bottom-left action
-        // slot without introducing an empty, collapsible Options section.
-        // Its visibility hook is not public; keep a standard accessory action
-        // as a compatibility fallback on systems that don't expose it.
-        let showNew = NSSelectorFromString("_setShowNewDocumentButton:")
-        if openPanel.responds(to: showNew) {
-            typealias SetNewVisible = @convention(c) (AnyObject, Selector, Bool) -> Void
-            unsafeBitCast(openPanel.method(for: showNew), to: SetNewVisible.self)(openPanel, showNew, true)
-        } else {
-            let create = NSButton(title: L10n.string("新建文档…"), target: self, action: #selector(newDocument(_:)))
-            create.bezelStyle = .rounded
-            create.setAccessibilityIdentifier("qmd-new-document")
-            create.sizeToFit()
-            openPanel.accessoryView = create
-            openPanel.isAccessoryViewDisclosed = true
-        }
-        // The default presenter clears the native New flag. Present the same
-        // controller-provided panel directly and return its normal response.
+        configureOpenPanel(openPanel)
+        let create = NSButton(title: L10n.string("新建文档…"), target: self, action: #selector(newDocument(_:)))
+        create.bezelStyle = .rounded
+        create.setAccessibilityIdentifier("qmd-new-document")
+        create.sizeToFit()
+        openPanel.accessoryView = create
+        openPanel.isAccessoryViewDisclosed = true
         openPanel.begin { [weak self] result in
-            self?.activeOpenPanel = nil
+            openPanel.delegate = nil
+            if self?.activeOpenPanel === openPanel {
+                self?.activeOpenPanel = nil
+                self?.openPanelDelegate = nil
+            }
             completionHandler(result.rawValue)
         }
+    }
+    func configureOpenPanel(_ openPanel: NSOpenPanel) {
+        // A file's UTI may come from RStudio, another editor, or a dynamic
+        // registration. Do not let that prevent opening a supported suffix.
+        openPanel.allowedContentTypes = []
+        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = false
+        openPanel.treatsFilePackagesAsDirectories = false
+        openPanel.allowsMultipleSelection = true
+        let delegate = NotebookOpenPanelDelegate()
+        openPanelDelegate = delegate
+        openPanel.delegate = delegate
     }
     func dismissOpenPanel() { activeOpenPanel?.cancel(nil) }
     override func newDocument(_ sender: Any?) {

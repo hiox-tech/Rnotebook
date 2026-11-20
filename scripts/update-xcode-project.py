@@ -19,6 +19,8 @@ for item in objects.values():
             settings['RNOTEBOOK_APP_ID'] = 'org.hiox.Rnotebook'
             settings['RNOTEBOOK_DISPLAY_NAME'] = 'Rnotebook'
             settings['PRODUCT_BUNDLE_IDENTIFIER'] = '$(RNOTEBOOK_APP_ID)'
+            settings['MARKETING_VERSION'] = '0.1.2'
+            settings['CURRENT_PROJECT_VERSION'] = '3'
 
 def uid(value):
     return hashlib.sha1(value.encode()).hexdigest()[:24].upper()
@@ -231,6 +233,7 @@ for name, base in [('Debug','7326A50204128321A8234000'),('Release','513804B2957F
  objects[key] = {'isa':'XCBuildConfiguration','name':name,'baseConfigurationReference':base,'buildSettings':{
   'APPLICATION_EXTENSION_API_ONLY':'YES','CODE_SIGN_ENTITLEMENTS':'QuickLook/Preview.entitlements','ENABLE_APP_SANDBOX':'YES',
   'GENERATE_INFOPLIST_FILE':'NO','INFOPLIST_FILE':'QuickLook/Info.plist','PRODUCT_NAME':'RnotebookPreview',
+  'MARKETING_VERSION':'0.1.2','CURRENT_PROJECT_VERSION':'3',
   'RNOTEBOOK_PREVIEW_ID':'org.hiox.Rnotebook.Preview',
   'PRODUCT_BUNDLE_IDENTIFIER':'$(RNOTEBOOK_PREVIEW_ID)','SKIP_INSTALL':'YES',
   'LD_RUNPATH_SEARCH_PATHS':'$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks',
