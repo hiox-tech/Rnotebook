@@ -4,6 +4,8 @@ Rnotebook 是一个由个人设计、由 AI 完成代码实现的原生 macOS �
 
 Rnotebook is a native macOS notebook application designed by one individual and implemented by AI. It brings Code / Visual editing, interactive R sessions, variable and package inspection, Quarto report export, and Finder Quick Look together for Quarto (`.qmd`) and R Markdown (`.Rmd`) documents.
 
+![Rnotebook](./Rnotebook.png)
+
 ## 项目定位 / Scope
 
 应用以普通 `.qmd` / `.Rmd` 源文件为文档，只管理文稿本身。图片、数据和其他依赖保留为外部文件引用；保存或移动文稿时，不会自动收集、归档或迁移这些资源。应用不提供项目管理、可编辑数据网格或完整 IDE 的调试功能。
